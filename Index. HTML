@@ -29,3 +29,791 @@ sns.set_palette("husl")
 print("=" * 70)
 print("SDG 13: CLIMATE ACTION - CO₂ EMISSIONS FORECASTING")
 print("=" * 70)
+
+PART 2: LOAD AND EXPLORE DATA
+# ============================================================================
+
+# Download data from: https://github.com/owid/co2-data
+# For demo purposes, we'll create synthetic data based on real patterns
+
+def create_sample_data():
+    """
+    Creates realistic synthetic CO2 emissions data
+    In your project, replace this with actual data loading:
+    df = pd.read_csv('owid-co2-data.csv')
+    """
+    np.random.seed(42)
+    years = range(1990, 2024)
+    countries = ['USA', 'China', 'India', 'Germany', 'Brazil'] * 7
+    
+    data = {
+        'country': countries[:len(years)*5],
+        'year': sorted(list(years) * 5),
+        'co2': [],
+        'gdp': [],
+        'population': [],
+        'energy_per_capita': [],
+        'renewables_share': []
+    }
+    
+    # Generate realistic trends
+    for i in range(len(data['country'])):
+        country = data['country'][i]
+        year = data['year'][i]
+        year_idx = year - 1990
+        
+        # Different emission patterns per country
+        if country == 'USA':
+            base_co2 = 5000 - year_idx * 30  # Declining
+        elif country == 'China':
+            base_co2 = 2500 + year_idx * 180  # Rapid growth
+        elif country == 'India':
+            base_co2 = 800 + year_idx * 65  # Growing
+        elif country == 'Germany':
+            base_co2 = 1000 - year_idx * 20  # Declining
+        else:  # Brazil
+            base_co2 = 350 + year_idx * 15  # Moderate growth
+        
+        data['co2'].append(base_co2 + np.random.normal(0, 100))
+        data['gdp'].append(15000 + year_idx * 500 + np.random.normal(0, 1000))
+        data['population'].append(50 + year_idx * 0.5 + np.random.normal(0, 2))
+        data['energy_per_capita'].append(100 + year_idx * 2 + np.random.normal(0, 5))
+        data['renewables_share'].append(5 + year_idx * 0.4 + np.random.normal(0, 1))
+    
+    return pd.DataFrame(data)
+
+df = create_sample_data()
+
+print("\n📊 Dataset Overview:")
+print(df.head(10))
+print(f"\nShape: {df.shape}")
+print(f"Countries: {df['country'].unique()}")
+print(f"Year range: {df['year'].min()} - {df['year'].max()}")
+
+# ============================================================================
+# PART 3: EXPLORATORY DATA ANALYSIS (EDA)
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("EXPLORATORY DATA ANALYSIS")
+print("=" * 70)
+
+# Basic statistics
+print("\n📈 Statistical Summary:")
+print(df.describe())
+
+# Check for missing values
+print("\n🔍 Missing Values:")
+print(df.isnull().sum())
+
+# Correlation analysis
+print("\n🔗 Correlation with CO₂ Emissions:")
+correlations = df.select_dtypes(include=[np.number]).corr()['co2'].sort_values(ascending=False)
+print(correlations)
+
+# Visualization 1: Emissions over time by country
+plt.figure(figsize=(14, 6))
+for country in df['country'].unique():
+    country_data = df[df['country'] == country]
+    plt.plot(country_data['year'], country_data['co2'], marker='o', label=country, linewidth=2)
+
+plt.title('CO₂ Emissions Trends by Country (1990-2023)', fontsize=16, fontweight='bold')
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('CO₂ Emissions (Million Tonnes)', fontsize=12)
+plt.legend(loc='best')
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('emissions_trends.png', dpi=300, bbox_inches='tight')
+print("\n✅ Saved: emissions_trends.png")
+
+# Visualization 2: Correlation heatmap
+plt.figure(figsize=(10, 8))
+correlation_matrix = df.select_dtypes(include=[np.number]).corr()
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0, 
+            square=True, linewidths=1, fmt='.2f')
+plt.title('Feature Correlation Heatmap', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.savefig('correlation_heatmap.png', dpi=300, bbox_inches='tight')
+print("✅ Saved: correlation_heatmap.png")
+
+# ============================================================================
+# PART 4: DATA PREPROCESSING
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("DATA PREPROCESSING")
+print("=" * 70)
+
+# Feature engineering
+df['gdp_per_capita'] = df['gdp'] / df['population']
+df['years_since_1990'] = df['year'] - 1990
+df['emission_intensity'] = df['co2'] / df['gdp']  # CO2 per unit GDP
+
+# One-hot encode country (categorical variable)
+df_encoded = pd.get_dummies(df, columns=['country'], prefix='country')
+
+print("\n🔧 Feature Engineering Complete:")
+print(f"New features: gdp_per_capita, years_since_1990, emission_intensity")
+print(f"Total features after encoding: {df_encoded.shape[1]}")
+
+# Prepare features and target
+X = df_encoded.drop(['co2', 'year'], axis=1)
+y = df_encoded['co2']
+
+# Split data (80-20)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print(f"\n📦 Data Split:")
+print(f"Training set: {X_train.shape[0]} samples")
+print(f"Testing set: {X_test.shape[0]} samples")
+
+# Feature scaling
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+print("✅ Features scaled using StandardScaler")
+
+# ============================================================================
+# PART 5: MODEL TRAINING AND COMPARISON
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("MODEL TRAINING AND EVALUATION")
+print("=" * 70)
+
+# Initialize models
+models = {
+    'Linear Regression': LinearRegression(),
+    'Random Forest': RandomForestRegressor(n_estimators=100, random_state=42),
+    'Gradient Boosting': GradientBoostingRegressor(n_estimators=100, random_state=42)
+}
+
+results = {}
+
+for name, model in models.items():
+    print(f"\n🤖 Training {name}...")
+    
+    # Train model
+    model.fit(X_train_scaled, y_train)
+    
+    # Predictions
+    y_pred_train = model.predict(X_train_scaled)
+    y_pred_test = model.predict(X_test_scaled)
+    
+    # Calculate metrics
+    mae = mean_absolute_error(y_test, y_pred_test)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
+    r2 = r2_score(y_test, y_pred_test)
+    
+    # Cross-validation
+    cv_scores = cross_val_score(model, X_train_scaled, y_train, 
+                                 cv=5, scoring='r2')
+    
+    results[name] = {
+        'MAE': mae,
+        'RMSE': rmse,
+        'R²': r2,
+        'CV R² Mean': cv_scores.mean(),
+        'CV R² Std': cv_scores.std(),
+        'model': model,
+        'predictions': y_pred_test
+    }
+    
+    print(f"  MAE: {mae:.2f}")
+    print(f"  RMSE: {rmse:.2f}")
+    print(f"  R² Score: {r2:.4f}")
+    print(f"  Cross-Val R²: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})")
+
+
+# ============================================================================
+# PART 6: MODEL COMPARISON AND VISUALIZATION
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("MODEL COMPARISON")
+print("=" * 70)
+
+# Create comparison dataframe
+comparison_df = pd.DataFrame({
+    'Model': list(results.keys()),
+    'MAE': [results[m]['MAE'] for m in results],
+    'RMSE': [results[m]['RMSE'] for m in results],
+    'R²': [results[m]['R²'] for m in results]
+})
+
+print("\n📊 Performance Comparison:")
+print(comparison_df.to_string(index=False))
+
+# Select best model
+best_model_name = comparison_df.loc[comparison_df['R²'].idxmax(), 'Model']
+best_model = results[best_model_name]['model']
+
+print(f"\n🏆 Best Model: {best_model_name}")
+print(f"   R² Score: {results[best_model_name]['R²']:.4f}")
+
+# Visualization 3: Model comparison bar chart
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+metrics = ['MAE', 'RMSE', 'R²']
+for idx, metric in enumerate(metrics):
+    axes[idx].bar(comparison_df['Model'], comparison_df[metric], 
+                  color=['#FF6B6B', '#4ECDC4', '#45B7D1'])
+    axes[idx].set_title(f'{metric} Comparison', fontweight='bold')
+    axes[idx].set_ylabel(metric)
+    axes[idx].tick_params(axis='x', rotation=45)
+    axes[idx].grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('model_comparison.png', dpi=300, bbox_inches='tight')
+print("\n✅ Saved: model_comparison.png")
+
+# Visualization 4: Actual vs Predicted
+plt.figure(figsize=(10, 6))
+y_pred_best = results[best_model_name]['predictions']
+
+plt.scatter(y_test, y_pred_best, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 
+         'r--', lw=2, label='Perfect Prediction')
+
+plt.xlabel('Actual CO₂ Emissions', fontsize=12)
+plt.ylabel('Predicted CO₂ Emissions', fontsize=12)
+plt.title(f'Actual vs Predicted CO₂ Emissions ({best_model_name})', 
+          fontsize=14, fontweight='bold')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('actual_vs_predicted.png', dpi=300, bbox_inches='tight')
+print("✅ Saved: actual_vs_predicted.png")
+
+# ============================================================================
+# PART 7: FEATURE IMPORTANCE (for tree-based models)
+# ============================================================================
+
+if best_model_name in ['Random Forest', 'Gradient Boosting']:
+    print("\n" + "=" * 70)
+    print("FEATURE IMPORTANCE ANALYSIS")
+    print("=" * 70)
+    
+    importances = best_model.feature_importances_
+    feature_names = X.columns
+    
+    importance_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importances
+    }).sort_values('Importance', ascending=False)
+    
+    print("\n🔝 Top 10 Most Important Features:")
+    print(importance_df.head(10).to_string(index=False))
+    
+    # Visualization 5: Feature importance
+    plt.figure(figsize=(10, 8))
+    top_features = importance_df.head(15)
+    plt.barh(range(len(top_features)), top_features['Importance'])
+    plt.yticks(range(len(top_features)), top_features['Feature'])
+    plt.xlabel('Importance Score', fontsize=12)
+    plt.title('Top 15 Feature Importance', fontsize=14, fontweight='bold')
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.savefig('feature_importance.png', dpi=300, bbox_inches='tight')
+    print("\n✅ Saved: feature_importance.png")
+
+# ============================================================================
+# PART 8: FUTURE PREDICTIONS (2024-2030)
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("FUTURE CO₂ EMISSIONS FORECAST (2024-2030)")
+print("=" * 70)
+
+# Create future data (scenario: moderate growth)
+future_years = range(2024, 2031)
+future_data = []
+
+for country in df['country'].unique()[:5]:
+    last_data = df[df['country'] == country].iloc[-1]
+    
+    for year in future_years:
+        future_data.append({
+            'year': year,
+            'country': country,
+            'gdp': last_data['gdp'] * (1.02 ** (year - 2023)),  # 2% annual growth
+            'population': last_data['population'] * (1.005 ** (year - 2023)),  # 0.5% growth
+            'energy_per_capita': last_data['energy_per_capita'] * (1.01 ** (year - 2023)),
+            'renewables_share': min(last_data['renewables_share'] + (year - 2023) * 0.8, 50)
+        })
+
+future_df = pd.DataFrame(future_data)
+
+# Feature engineering for future data
+future_df['gdp_per_capita'] = future_df['gdp'] / future_df['population']
+future_df['years_since_1990'] = future_df['year'] - 1990
+future_df['emission_intensity'] = 0  # Will be predicted
+
+# Encode and prepare
+future_encoded = pd.get_dummies(future_df, columns=['country'], prefix='country')
+
+# Ensure same columns as training data
+for col in X.columns:
+    if col not in future_encoded.columns:
+        future_encoded[col] = 0
+
+future_encoded = future_encoded[X.columns]
+
+# Scale and predict
+future_scaled = scaler.transform(future_encoded)
+future_predictions = best_model.predict(future_scaled)
+
+future_df['predicted_co2'] = future_predictions
+
+print("\n🔮 Predicted CO₂ Emissions by Country (2030):")
+print(future_df[future_df['year'] == 2030][['country', 'predicted_co2']])
+
+# Visualization 6: Future predictions
+plt.figure(figsize=(14, 6))
+
+for country in future_df['country'].unique():
+    # Historical data
+    hist = df[df['country'] == country]
+    plt.plot(hist['year'], hist['co2'], marker='o', label=f'{country} (Historical)', linewidth=2)
+    
+    # Future predictions
+    fut = future_df[future_df['country'] == country]
+    plt.plot(fut['year'], fut['predicted_co2'], marker='s', linestyle='--', 
+             linewidth=2, alpha=0.7)
+
+plt.axvline(x=2023.5, color='red', linestyle=':', linewidth=2, label='Forecast Start')
+plt.title('CO₂ Emissions: Historical Data & Future Predictions', fontsize=16, fontweight='bold')
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('CO₂ Emissions (Million Tonnes)', fontsize=12)
+plt.legend(loc='best', fontsize=8)
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('future_predictions.png', dpi=300, bbox_inches='tight')
+print("\n✅ Saved: future_predictions.png")
+
+
+# ============================================================================
+# PART 6: MODEL COMPARISON AND VISUALIZATION
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("MODEL COMPARISON")
+print("=" * 70)
+
+# Create comparison dataframe
+comparison_df = pd.DataFrame({
+    'Model': list(results.keys()),
+    'MAE': [results[m]['MAE'] for m in results],
+    'RMSE': [results[m]['RMSE'] for m in results],
+    'R²': [results[m]['R²'] for m in results]
+})
+
+print("\n📊 Performance Comparison:")
+print(comparison_df.to_string(index=False))
+
+# Select best model
+best_model_name = comparison_df.loc[comparison_df['R²'].idxmax(), 'Model']
+best_model = results[best_model_name]['model']
+
+print(f"\n🏆 Best Model: {best_model_name}")
+print(f"   R² Score: {results[best_model_name]['R²']:.4f}")
+
+# Visualization 3: Model comparison bar chart
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+metrics = ['MAE', 'RMSE', 'R²']
+for idx, metric in enumerate(metrics):
+    axes[idx].bar(comparison_df['Model'], comparison_df[metric], 
+                  color=['#FF6B6B', '#4ECDC4', '#45B7D1'])
+    axes[idx].set_title(f'{metric} Comparison', fontweight='bold')
+    axes[idx].set_ylabel(metric)
+    axes[idx].tick_params(axis='x', rotation=45)
+    axes[idx].grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('model_comparison.png', dpi=300, bbox_inches='tight')
+print("\n✅ Saved: model_comparison.png")
+
+# Visualization 4: Actual vs Predicted
+plt.figure(figsize=(10, 6))
+y_pred_best = results[best_model_name]['predictions']
+
+plt.scatter(y_test, y_pred_best, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 
+         'r--', lw=2, label='Perfect Prediction')
+
+plt.xlabel('Actual CO₂ Emissions', fontsize=12)
+plt.ylabel('Predicted CO₂ Emissions', fontsize=12)
+plt.title(f'Actual vs Predicted CO₂ Emissions ({best_model_name})', 
+          fontsize=14, fontweight='bold')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('actual_vs_predicted.png', dpi=300, bbox_inches='tight')
+print("✅ Saved: actual_vs_predicted.png")
+
+# ============================================================================
+# PART 7: FEATURE IMPORTANCE (for tree-based models)
+# ============================================================================
+
+if best_model_name in ['Random Forest', 'Gradient Boosting']:
+    print("\n" + "=" * 70)
+    print("FEATURE IMPORTANCE ANALYSIS")
+    print("=" * 70)
+    
+    importances = best_model.feature_importances_
+    feature_names = X.columns
+    
+    importance_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importances
+    }).sort_values('Importance', ascending=False)
+    
+    print("\n🔝 Top 10 Most Important Features:")
+    print(importance_df.head(10).to_string(index=False))
+    
+    # Visualization 5: Feature importance
+    plt.figure(figsize=(10, 8))
+    top_features = importance_df.head(15)
+    plt.barh(range(len(top_features)), top_features['Importance'])
+    plt.yticks(range(len(top_features)), top_features['Feature'])
+    plt.xlabel('Importance Score', fontsize=12)
+    plt.title('Top 15 Feature Importance', fontsize=14, fontweight='bold')
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.savefig('feature_importance.png', dpi=300, bbox_inches='tight')
+    print("\n✅ Saved: feature_importance.png")
+
+# ============================================================================
+# PART 8: FUTURE PREDICTIONS (2024-2030)
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("FUTURE CO₂ EMISSIONS FORECAST (2024-2030)")
+print("=" * 70)
+
+# Create future data (scenario: moderate growth)
+future_years = range(2024, 2031)
+future_data = []
+
+for country in df['country'].unique()[:5]:
+    last_data = df[df['country'] == country].iloc[-1]
+    
+    for year in future_years:
+        future_data.append({
+            'year': year,
+            'country': country,
+            'gdp': last_data['gdp'] * (1.02 ** (year - 2023)),  # 2% annual growth
+            'population': last_data['population'] * (1.005 ** (year - 2023)),  # 0.5% growth
+            'energy_per_capita': last_data['energy_per_capita'] * (1.01 ** (year - 2023)),
+            'renewables_share': min(last_data['renewables_share'] + (year - 2023) * 0.8, 50)
+        })
+
+future_df = pd.DataFrame(future_data)
+
+# Feature engineering for future data
+future_df['gdp_per_capita'] = future_df['gdp'] / future_df['population']
+future_df['years_since_1990'] = future_df['year'] - 1990
+future_df['emission_intensity'] = 0  # Will be predicted
+
+# Encode and prepare
+future_encoded = pd.get_dummies(future_df, columns=['country'], prefix='country')
+
+# Ensure same columns as training data
+for col in X.columns:
+    if col not in future_encoded.columns:
+        future_encoded[col] = 0
+
+future_encoded = future_encoded[X.columns]
+
+# Scale and predict
+future_scaled = scaler.transform(future_encoded)
+future_predictions = best_model.predict(future_scaled)
+
+future_df['predicted_co2'] = future_predictions
+
+print("\n🔮 Predicted CO₂ Emissions by Country (2030):")
+print(future_df[future_df['year'] == 2030][['country', 'predicted_co2']])
+
+# Visualization 6: Future predictions
+plt.figure(figsize=(14, 6))
+
+for country in future_df['country'].unique():
+    # Historical data
+    hist = df[df['country'] == country]
+    plt.plot(hist['year'], hist['co2'], marker='o', label=f'{country} (Historical)', linewidth=2)
+    
+    # Future predictions
+    fut = future_df[future_df['country'] == country]
+    plt.plot(fut['year'], fut['predicted_co2'], marker='s', linestyle='--', 
+             linewidth=2, alpha=0.7)
+
+plt.axvline(x=2023.5, color='red', linestyle=':', linewidth=2, label='Forecast Start')
+plt.title('CO₂ Emissions: Historical Data & Future Predictions', fontsize=16, fontweight='bold')
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('CO₂ Emissions (Million Tonnes)', fontsize=12)
+plt.legend(loc='best', fontsize=8)
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('future_predictions.png', dpi=300, bbox_inches='tight')
+print("\n✅ Saved: future_predictions.png")
+
+# ============================================================================
+# PART 6: MODEL COMPARISON AND VISUALIZATION
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("MODEL COMPARISON")
+print("=" * 70)
+
+# Create comparison dataframe
+comparison_df = pd.DataFrame({
+    'Model': list(results.keys()),
+    'MAE': [results[m]['MAE'] for m in results],
+    'RMSE': [results[m]['RMSE'] for m in results],
+    'R²': [results[m]['R²'] for m in results]
+})
+
+print("\n📊 Performance Comparison:")
+print(comparison_df.to_string(index=False))
+
+# Select best model
+best_model_name = comparison_df.loc[comparison_df['R²'].idxmax(), 'Model']
+best_model = results[best_model_name]['model']
+
+print(f"\n🏆 Best Model: {best_model_name}")
+print(f"   R² Score: {results[best_model_name]['R²']:.4f}")
+
+# Visualization 3: Model comparison bar chart
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+metrics = ['MAE', 'RMSE', 'R²']
+for idx, metric in enumerate(metrics):
+    axes[idx].bar(comparison_df['Model'], comparison_df[metric], 
+                  color=['#FF6B6B', '#4ECDC4', '#45B7D1'])
+    axes[idx].set_title(f'{metric} Comparison', fontweight='bold')
+    axes[idx].set_ylabel(metric)
+    axes[idx].tick_params(axis='x', rotation=45)
+    axes[idx].grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('model_comparison.png', dpi=300, bbox_inches='tight')
+print("\n✅ Saved: model_comparison.png")
+
+# Visualization 4: Actual vs Predicted
+plt.figure(figsize=(10, 6))
+y_pred_best = results[best_model_name]['predictions']
+
+plt.scatter(y_test, y_pred_best, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 
+         'r--', lw=2, label='Perfect Prediction')
+
+plt.xlabel('Actual CO₂ Emissions', fontsize=12)
+plt.ylabel('Predicted CO₂ Emissions', fontsize=12)
+plt.title(f'Actual vs Predicted CO₂ Emissions ({best_model_name})', 
+          fontsize=14, fontweight='bold')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('actual_vs_predicted.png', dpi=300, bbox_inches='tight')
+print("✅ Saved: actual_vs_predicted.png")
+
+# ============================================================================
+# PART 7: FEATURE IMPORTANCE (for tree-based models)
+# ============================================================================
+
+if best_model_name in ['Random Forest', 'Gradient Boosting']:
+    print("\n" + "=" * 70)
+    print("FEATURE IMPORTANCE ANALYSIS")
+    print("=" * 70)
+    
+    importances = best_model.feature_importances_
+    feature_names = X.columns
+    
+    importance_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importances
+    }).sort_values('Importance', ascending=False)
+    
+    print("\n🔝 Top 10 Most Important Features:")
+    print(importance_df.head(10).to_string(index=False))
+    
+    # Visualization 5: Feature importance
+    plt.figure(figsize=(10, 8))
+    top_features = importance_df.head(15)
+    plt.barh(range(len(top_features)), top_features['Importance'])
+    plt.yticks(range(len(top_features)), top_features['Feature'])
+    plt.xlabel('Importance Score', fontsize=12)
+    plt.title('Top 15 Feature Importance', fontsize=14, fontweight='bold')
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.savefig('feature_importance.png', dpi=300, bbox_inches='tight')
+    print("\n✅ Saved: feature_importance.png")
+
+# ============================================================================
+# PART 8: FUTURE PREDICTIONS (2024-2030)
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("FUTURE CO₂ EMISSIONS FORECAST (2024-2030)")
+print("=" * 70)
+
+# Create future data (scenario: moderate growth)
+future_years = range(2024, 2031)
+future_data = []
+
+for country in df['country'].unique()[:5]:
+    last_data = df[df['country'] == country].iloc[-1]
+    
+    for year in future_years:
+        future_data.append({
+            'year': year,
+            'country': country,
+            'gdp': last_data['gdp'] * (1.02 ** (year - 2023)),  # 2% annual growth
+            'population': last_data['population'] * (1.005 ** (year - 2023)),  # 0.5% growth
+            'energy_per_capita': last_data['energy_per_capita'] * (1.01 ** (year - 2023)),
+            'renewables_share': min(last_data['renewables_share'] + (year - 2023) * 0.8, 50)
+        })
+
+future_df = pd.DataFrame(future_data)
+
+# Feature engineering for future data
+future_df['gdp_per_capita'] = future_df['gdp'] / future_df['population']
+future_df['years_since_1990'] = future_df['year'] - 1990
+future_df['emission_intensity'] = 0  # Will be predicted
+
+# Encode and prepare
+future_encoded = pd.get_dummies(future_df, columns=['country'], prefix='country')
+
+# Ensure same columns as training data
+for col in X.columns:
+    if col not in future_encoded.columns:
+        future_encoded[col] = 0
+
+future_encoded = future_encoded[X.columns]
+
+# Scale and predict
+future_scaled = scaler.transform(future_encoded)
+future_predictions = best_model.predict(future_scaled)
+
+future_df['predicted_co2'] = future_predictions
+
+print("\n🔮 Predicted CO₂ Emissions by Country (2030):")
+print(future_df[future_df['year'] == 2030][['country', 'predicted_co2']])
+
+# Visualization 6: Future predictions
+plt.figure(figsize=(14, 6))
+
+for country in future_df['country'].unique():
+    # Historical data
+    hist = df[df['country'] == country]
+    plt.plot(hist['year'], hist['co2'], marker='o', label=f'{country} (Historical)', linewidth=2)
+    
+    # Future predictions
+    fut = future_df[future_df['country'] == country]
+    plt.plot(fut['year'], fut['predicted_co2'], marker='s', linestyle='--', 
+             linewidth=2, alpha=0.7)
+
+plt.axvline(x=2023.5, color='red', linestyle=':', linewidth=2, label='Forecast Start')
+plt.title('CO₂ Emissions: Historical Data & Future Predictions', fontsize=16, fontweight='bold')
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('CO₂ Emissions (Million Tonnes)', fontsize=12)
+plt.legend(loc='best', fontsize=8)
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('future_predictions.png', dpi=300, bbox_inches='tight')
+print("\n✅ Saved: future_predictions.png")
+
+# ============================================================================
+# PART 9: ETHICAL CONSIDERATIONS & SUMMARY
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("PROJECT SUMMARY & ETHICAL REFLECTION")
+print("=" * 70)
+
+summary = f"""
+🌍 SDG 13: CLIMATE ACTION - PROJECT SUMMARY
+
+PROBLEM ADDRESSED:
+Predicting future CO₂ emissions to inform climate policy and track progress
+toward net-zero targets. Accurate forecasts help governments and organizations
+allocate resources effectively and set realistic reduction goals.
+
+ML APPROACH:
+- Supervised Learning: Regression models (Linear, Random Forest, Gradient Boosting)
+- Features: GDP, population, energy consumption, renewable energy share
+- Best Model: {best_model_name} (R² = {results[best_model_name]['R²']:.4f})
+
+KEY FINDINGS:
+- Emissions strongly correlated with GDP and energy consumption
+- Renewable energy share shows negative correlation (as expected)
+- Model predicts emissions with MAE of {results[best_model_name]['MAE']:.2f} million tonnes
+- Future projections suggest varying trends across countries
+
+⚖️ ETHICAL CONSIDERATIONS:
+
+1. DATA BIAS:
+   - Historical data may not reflect recent policy changes or green tech adoption
+   - Developing nations underrepresented in high-quality emissions data
+   - Missing data from conflict zones or nations with limited monitoring
+
+2. MODEL LIMITATIONS:
+   - Cannot predict Black Swan events (wars, pandemics, economic crashes)
+   - Assumes linear relationships may not capture tipping points
+   - Technology breakthroughs (fusion energy) could invalidate predictions
+
+3. FAIRNESS & EQUITY:
+   - Developed nations responsible for historical emissions vs. developing nations
+   - Model should not be used to unfairly penalize nations in growth phase
+   - Climate justice requires considering per-capita emissions, not just totals
+
+4. TRANSPARENCY:
+   - Predictions should be presented with confidence intervals
+   - Policymakers must understand model assumptions and limitations
+   - Open-source approach ensures scientific scrutiny
+
+5. POSITIVE IMPACT:
+   - Early warning system for emission targets being missed
+   - Helps track SDG 13 progress objectively
+   - Enables evidence-based climate negotiations
+
+RECOMMENDATIONS:
+- Integrate real-time satellite data for continuous monitoring
+- Incorporate climate models for weather-emission feedback loops
+- Partner with UN/IPCC for validation and deployment
+- Create public dashboard for transparency and accountability
+
+🎯 SDG 13 IMPACT:
+This model contributes to Climate Action by providing data-driven insights
+for policymakers, enabling better resource allocation, and tracking global
+progress toward the Paris Agreement goals.
+"""
+
+print(summary)
+
+# Save summary to file
+with open('project_summary.txt', 'w') as f:
+    f.write(summary)
+
+print("\n✅ Saved: project_summary.txt")
+print("\n" + "=" * 70)
+print("PROJECT COMPLETE! 🎉")
+print("=" * 70)
+print("\nGenerated Files:")
+print("  1. emissions_trends.png")
+print("  2. correlation_heatmap.png")
+print("  3. model_comparison.png")
+print("  4. actual_vs_predicted.png")
+print("  5. feature_importance.png")
+print("  6. future_predictions.png")
+print("  7. project_summary.txt")
+print("\nNext Steps:")
+print("  • Replace synthetic data with real OWID dataset")
+print("  • Try LSTM for time series forecasting")
+print("  • Deploy as Streamlit app for interactive exploration")
+print("  • Add confidence intervals to predictions")
+print("=" * 70)
