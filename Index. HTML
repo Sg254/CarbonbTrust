@@ -1,0 +1,31 @@
+"""
+SDG 13: Climate Action - CO₂ Emissions Forecasting
+Complete ML Pipeline for Predicting Global Carbon Emissions
+
+Author: [Samuel Githumbi]
+Date: October 2025
+"""
+
+# ============================================================================
+# PART 1: SETUP AND DATA LOADING
+# ============================================================================
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import warnings
+warnings.filterwarnings('ignore')
+
+# Set visualization style
+plt.style.use('seaborn-v0_8-darkgrid')
+sns.set_palette("husl")
+
+print("=" * 70)
+print("SDG 13: CLIMATE ACTION - CO₂ EMISSIONS FORECASTING")
+print("=" * 70)
