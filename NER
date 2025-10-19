@@ -1,0 +1,59 @@
+
+# Import libraries
+import spacy
+from textblob import TextBlob
+
+# Load English model for NER
+nlp = spacy.load("en_core_web_sm")
+
+# Sample Amazon product reviews
+reviews = [
+    "I absolutely love my new Samsung Galaxy S21! The camera quality is amazing.",
+    "The Nike running shoes are very comfortable and lightweight.",
+    "I am disappointed with the Apple AirPods, the battery life is terrible.",
+    "The Lenovo laptop performs well but the screen brightness could be better.",
+    "These Sony headphones have fantastic sound quality and noise cancellation."
+]
+
+# Process each review
+for review in reviews:
+    doc = nlp(review)
+
+    # Extract entities related to product names or brands
+    entities = [(ent.text, ent.label_) for ent in doc.ents if ent.label_ in ["ORG", "PRODUCT"]]
+
+    # Perform rule-based sentiment analysis using TextBlob
+    sentiment_score = TextBlob(review).sentiment.polarity
+    sentiment = "Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral"
+
+    # Print results
+    print(f"Review: {review}")
+    print(f"Extracted Entities (Product/Brand): {entities}")
+    print(f"Sentiment: {sentiment}")
+    print("-" * 80)
+
+
+---
+
+✅ Expected Output
+
+Review: I absolutely love my new Samsung Galaxy S21! The camera quality is amazing.
+Extracted Entities (Product/Brand): [('Samsung', 'ORG')]
+Sentiment: Positive
+--------------------------------------------------------------------------------
+Review: The Nike running shoes are very comfortable and lightweight.
+Extracted Entities (Product/Brand): [('Nike', 'ORG')]
+Sentiment: Positive
+--------------------------------------------------------------------------------
+Review: I am disappointed with the Apple AirPods, the battery life is terrible.
+Extracted Entities (Product/Brand): [('Apple', 'ORG')]
+Sentiment: Negative
+--------------------------------------------------------------------------------
+Review: The Lenovo laptop performs well but the screen brightness could be better.
+Extracted Entities (Product/Brand): [('Lenovo', 'ORG')]
+Sentiment: Neutral
+--------------------------------------------------------------------------------
+Review: These Sony headphones have fantastic sound quality and noise cancellation.
+Extracted Entities (Product/Brand): [('Sony', 'ORG')]
+Sentiment: Positive
+--------------------------------------------------------------------------------
