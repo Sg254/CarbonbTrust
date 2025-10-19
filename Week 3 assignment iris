@@ -1,0 +1,136 @@
+"""
+Iris Decision Tree Classifier — Enhanced Version
+
+This script/notebook demonstrates:
+1. Loading the Iris dataset (from scikit-learn)
+2. Basic preprocessing (missing-value check + imputation example, label encoding)
+3. Training a Decision Tree classifier with scikit-learn
+4. Model evaluation using accuracy, precision, recall, and visualization
+5. Hyperparameter tuning using GridSearchCV
+6. Cross-validation for more robust performance
+7. Visualization of the decision tree structure
+8. Saving the trained model
+"""
+
+# 1. Imports
+import numpy as np
+import pandas as pd
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import LabelEncoder
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.metrics import accuracy_score, precision_score, recall_score, classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib
+
+# 2. Load the Iris dataset
+iris = load_iris()
+X = pd.DataFrame(iris.data, columns=iris.feature_names)
+y = pd.Series(iris.target)
+target_names = iris.target_names
+
+# 3. Quick exploratory checks
+print("First 5 rows of X:\n", X.head())
+print("Value counts for y:\n", y.value_counts())
+print("Feature summary:\n", X.describe())
+
+# 4. Handle missing values (Iris has none, but example shown)
+imputer = SimpleImputer(strategy="mean")
+X_imputed = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
+
+# 5. Encode labels (already numeric)
+y_encoded = y
+
+# 6. Train/Test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X_imputed, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+)
+
+# 7. Model: Decision Tree Classifier (base model)
+clf = DecisionTreeClassifier(random_state=42)
+clf.fit(X_train, y_train)
+
+# 8. Predictions
+y_pred = clf.predict(X_test)
+
+# 9. Evaluation
+acc = accuracy_score(y_test, y_pred)
+prec_macro = precision_score(y_test, y_pred, average="macro", zero_division=0)
+recall_macro = recall_score(y_test, y_pred, average="macro", zero_division=0)
+
+print(f"Base Model Accuracy: {acc:.4f}")
+print(f"Precision (macro): {prec_macro:.4f}")
+print(f"Recall (macro): {recall_macro:.4f}")
+
+print("\nClassification report:\n")
+print(classification_report(y_test, y_pred, target_names=target_names, zero_division=0))
+print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
+
+# Confusion matrix heatmap
+plt.figure(figsize=(5,4))
+sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, cmap="Blues", fmt="d", xticklabels=target_names, yticklabels=target_names)
+plt.title("Confusion Matrix - Decision Tree")
+plt.ylabel("True Label")
+plt.xlabel("Predicted Label")
+plt.show()
+
+# 10. Cross-validation
+cv_scores = cross_val_score(clf, X_imputed, y_encoded, cv=5)
+print(f"Cross-validation scores: {cv_scores}")
+print(f"Mean CV accuracy: {cv_scores.mean():.4f}")
+
+# 11. Hyperparameter tuning with GridSearchCV
+param_grid = {
+    'criterion': ['gini', 'entropy'],
+    'max_depth': [2, 3, 4, 5, None],
+    'min_samples_split': [2, 3, 4],
+    'min_samples_leaf': [1, 2, 3]
+}
+
+grid_search = GridSearchCV(
+    estimator=DecisionTreeClassifier(random_state=42),
+    param_grid=param_grid,
+    cv=5,
+    scoring='accuracy',
+    n_jobs=-1
+)
+
+grid_search.fit(X_train, y_train)
+print("Best parameters found:", grid_search.best_params_)
+print(f"Best cross-validated accuracy: {grid_search.best_score_:.4f}")
+
+# Refit with best model
+best_clf = grid_search.best_estimator_
+y_pred_best = best_clf.predict(X_test)
+
+# 12. Evaluate tuned model
+print("\nTuned Model Evaluation:")
+print(classification_report(y_test, y_pred_best, target_names=target_names, zero_division=0))
+
+# 13. Visualize decision tree
+plt.figure(figsize=(12,8))
+plot_tree(best_clf, feature_names=iris.feature_names, class_names=iris.target_names, filled=True, rounded=True)
+plt.title("Optimized Decision Tree Visualization")
+plt.show()
+
+# 14. Save the trained best model
+joblib.dump(best_clf, "decision_tree_iris_best.joblib")
+print("Saved optimized model to 'decision_tree_iris_best.joblib'.")
+
+# 15. Notes
+# - You can use export_graphviz or dtreeviz for interactive visualizations.
+# - The tuned model parameters improve generalization.
+# - For Kaggle CSV version, load using pd.read_csv and ensure correct column mapping.
+
+
+The enhanced version now includes:
+✅ Cross-validation (5-fold)
+✅ Hyperparameter tuning using GridSearchCV
+✅ Confusion matrix visualization
+✅ Decision tree visualization
+✅ Automatic saving of the optimized model
+
+Would you like me to export this as a .ipynb notebook or a .py script for submission?
+
