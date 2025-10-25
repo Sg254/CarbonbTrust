@@ -1,0 +1,307 @@
+"""
+Hospital Readmission Prediction - Advanced Feature Engineering
+================================================================
+Creates clinically-relevant features for improved prediction.
+"""
+
+import pandas as pd
+import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin
+
+class ClinicalFeatureEngineer(BaseEstimator, TransformerMixin):
+    """
+    Creates advanced clinical features for readmission prediction.
+    Implements domain knowledge from healthcare literature.
+    """
+    
+    def __init__(self):
+        self.feature_names = None
+        
+    def fit(self, X, y=None):
+        """Fit method (required for sklearn compatibility)."""
+        return self
+    
+    def transform(self, X):
+        """
+        Transform data by adding engineered features.
+        
+        Parameters:
+        -----------
+        X : pd.DataFrame
+            Preprocessed patient data
+            
+        Returns:
+        --------
+        pd.DataFrame : Data with additional engineered features
+        """
+        X = X.copy()
+        
+        # ===== COMORBIDITY FEATURES =====
+        
+        # Charlson Comorbidity Index approximation
+        X['charlson_score'] = self._calculate_charlson_index(X)
+        
+        # High-risk comorbidity combinations
+        X['diabetes_and_ckd'] = (
+            (X.get('has_diabetes', 0) == 1) & 
+            (X.get('has_ckd', 0) == 1)
+        ).astype(int)
+        
+        X['chf_and_copd'] = (
+            (X.get('has_chf', 0) == 1) & 
+            (X.get('has_copd', 0) == 1)
+        ).astype(int)
+        
+        X['triple_comorbidity'] = (
+            (X.get('has_chf', 0) == 1) & 
+            (X.get('has_diabetes', 0) == 1) & 
+            (X.get('has_ckd', 0) == 1)
+        ).astype(int)
+        
+        # ===== MEDICATION FEATURES =====
+        
+        # Polypharmacy flag (5+ medications is high risk)
+        X['polypharmacy'] = (X.get('num_medications', 0) >= 5).astype(int)
+        
+        # Extreme polypharmacy (10+ medications)
+        X['extreme_polypharmacy'] = (X.get('num_medications', 0) >= 10).astype(int)
+        
+        # Medication complexity score (interaction with age)
+        X['medication_complexity'] = (
+            X.get('num_medications', 0) * 
+            (X.get('age', 65) / 65)  # Normalized by typical age
+        )
+        
+        # ===== UTILIZATION FEATURES =====
+        
+        # Frequent flyer flag (2+ previous admissions)
+        X['frequent_admission'] = (X.get('previous_admissions', 0) >= 2).astype(int)
+        
+        # Recent admission flag (within 90 days)
+        X['recent_admission'] = (
+            X.get('days_since_last_admission', 999) < 90
+        ).astype(int)
+        
+        # Very recent admission (within 30 days - "revolving door")
+        X['revolving_door'] = (
+            X.get('days_since_last_admission', 999) < 30
+        ).astype(int)
+        
+        # ===== LAB VALUE FEATURES =====
+        
+        # Anemia flag (hemoglobin < 10 g/dL for severe anemia)
+        if 'hemoglobin' in X.columns:
+            # Assuming standardized values, convert back for threshold
+            X['severe_anemia'] = (X['hemoglobin'] < -1.0).astype(int)  # ~2 SD below mean
+        
+        # Kidney dysfunction (elevated creatinine)
+        if 'creatinine' in X.columns:
+            X['kidney_dysfunction'] = (X['creatinine'] > 1.0).astype(int)  # Above median
+        
+        # ===== SOCIAL DETERMINANTS =====
+        
+        # Social risk score (combination of SDOH factors)
+        X['social_risk_score'] = (
+            X.get('lives_alone', 0) +
+            (1 - X.get('has_transportation', 1)) +
+            (X.get('insurance', 0) == 3).astype(int)  # Uninsured (if encoded as 3)
+        )
+        
+        # High social risk flag
+        X['high_social_risk'] = (X['social_risk_score'] >= 2).astype(int)
+        
+        # ===== DISCHARGE FACTORS =====
+        
+        # Weekend discharge flag (higher readmission risk)
+        if 'discharge_day' in X.columns:
+            # Assuming discharge_day is encoded (need to check encoding)
+            # Typically Friday=4, Saturday=5 for encoded weekdays
+            X['weekend_discharge'] = (
+                (X['discharge_day'] >= 4) & (X['discharge_day'] <= 5)
+            ).astype(int)
+        
+        # Missing follow-up flag
+        X['no_followup'] = (1 - X.get('has_followup_scheduled', 0))
+        
+        # ===== AGE-BASED FEATURES =====
+        
+        # Age categories
+        if 'age' in X.columns:
+            # Standardized age needs to be converted back for thresholds
+            # For simplicity, we'll create relative categories
+            X['elderly'] = (X['age'] > 0.5).astype(int)  # Above mean + 0.5 SD
+            X['very_elderly'] = (X['age'] > 1.5).astype(int)  # Above mean + 1.5 SD
+        
+        # Age-comorbidity interaction
+        X['age_comorbidity_interaction'] = (
+            X.get('age', 0) * X.get('num_comorbidities', 0)
+        )
+        
+        # ===== LENGTH OF STAY FEATURES =====
+        
+        # Short stay flag (< 2 days - may indicate premature discharge)
+        if 'length_of_stay' in X.columns:
+            X['short_stay'] = (X['length_of_stay'] < -0.5).astype(int)
+        
+        # Extended stay flag (> 7 days - indicates complexity)
+        if 'length_of_stay' in X.columns:
+            X['extended_stay'] = (X['length_of_stay'] > 1.0).astype(int)
+        
+        # ===== COMPOSITE RISK SCORES =====
+        
+        # Clinical complexity score
+        X['clinical_complexity'] = (
+            X.get('num_comorbidities', 0) +
+            X.get('polypharmacy', 0) +
+            X.get('kidney_dysfunction', 0) +
+            X.get('severe_anemia', 0)
+        )
+        
+        # Discharge readiness score (inverse - higher is worse)
+        X['discharge_risk'] = (
+            X.get('no_followup', 0) +
+            X.get('weekend_discharge', 0) +
+            X.get('high_social_risk', 0) +
+            X.get('short_stay', 0)
+        )
+        
+        # Overall readmission risk composite
+        X['composite_risk_score'] = (
+            0.3 * X.get('clinical_complexity', 0) +
+            0.2 * X.get('discharge_risk', 0) +
+            0.2 * X.get('frequent_admission', 0) +
+            0.2 * X.get('recent_admission', 0) +
+            0.1 * X.get('elderly', 0)
+        )
+        
+        self.feature_names = X.columns.tolist()
+        
+        return X
+    
+    def _calculate_charlson_index(self, X):
+        """
+        Calculate Charlson Comorbidity Index.
+        Simplified version based on available diagnoses.
+        
+        Scoring:
+        - CHF: 1 point
+        - Diabetes: 1 point  
+        - CKD: 2 points
+        - COPD: 1 point
+        """
+        score = (
+            1 * X.get('has_chf', 0) +
+            1 * X.get('has_diabetes', 0) +
+            2 * X.get('has_ckd', 0) +
+            1 * X.get('has_copd', 0)
+        )
+        return score
+    
+    def get_feature_names(self):
+        """Return list of all feature names after transformation."""
+        return self.feature_names
+
+
+class FeatureSelector(BaseEstimator, TransformerMixin):
+    """
+    Select most important features to reduce dimensionality and avoid overfitting.
+    """
+    
+    def __init__(self, k=30, method='variance'):
+        """
+        Parameters:
+        -----------
+        k : int, default=30
+            Number of top features to keep
+        method : str, default='variance'
+            Selection method: 'variance', 'correlation', or 'mutual_info'
+        """
+        self.k = k
+        self.method = method
+        self.selected_features = None
+        
+    def fit(self, X, y=None):
+        """Fit feature selector."""
+        if self.method == 'variance':
+            # Select features with highest variance
+            variances = X.var()
+            self.selected_features = variances.nlargest(self.k).index.tolist()
+            
+        elif self.method == 'correlation' and y is not None:
+            # Select features most correlated with target
+            correlations = X.corrwith(y).abs()
+            self.selected_features = correlations.nlargest(self.k).index.tolist()
+            
+        else:
+            # Default: keep all features if method unknown or y not provided
+            self.selected_features = X.columns.tolist()[:self.k]
+        
+        return self
+    
+    def transform(self, X):
+        """Transform by keeping only selected features."""
+        return X[self.selected_features]
+    
+    def get_feature_names(self):
+        """Return selected feature names."""
+        return self.selected_features
+
+
+# Example usage
+if __name__ == "__main__":
+    from sklearn.pipeline import Pipeline
+    
+    # Assuming we have preprocessed data from previous step
+    print("=== Feature Engineering Demo ===\n")
+    
+    # Create sample preprocessed data
+    np.random.seed(42)
+    n_samples = 1000
+    
+    X = pd.DataFrame({
+        'age': np.random.randn(n_samples),
+        'num_comorbidities': np.random.randint(0, 8, n_samples),
+        'num_medications': np.random.randint(0, 15, n_samples),
+        'has_chf': np.random.binomial(1, 0.25, n_samples),
+        'has_diabetes': np.random.binomial(1, 0.30, n_samples),
+        'has_copd': np.random.binomial(1, 0.20, n_samples),
+        'has_ckd': np.random.binomial(1, 0.15, n_samples),
+        'hemoglobin': np.random.randn(n_samples),
+        'creatinine': np.random.randn(n_samples),
+        'lives_alone': np.random.binomial(1, 0.35, n_samples),
+        'has_transportation': np.random.binomial(1, 0.70, n_samples),
+        'previous_admissions': np.random.randint(0, 5, n_samples),
+        'days_since_last_admission': np.random.randint(10, 400, n_samples),
+        'discharge_day': np.random.randint(0, 7, n_samples),
+        'has_followup_scheduled': np.random.binomial(1, 0.65, n_samples),
+        'length_of_stay': np.random.randn(n_samples),
+        'insurance': np.random.randint(0, 4, n_samples)
+    })
+    
+    y = np.random.binomial(1, 0.15, n_samples)
+    
+    print(f"Original features: {X.shape[1]}")
+    print(f"Sample size: {len(X)}\n")
+    
+    # Create feature engineering pipeline
+    feature_engineer = ClinicalFeatureEngineer()
+    X_engineered = feature_engineer.fit_transform(X)
+    
+    print(f"Features after engineering: {X_engineered.shape[1]}")
+    print(f"\nNew features created:")
+    new_features = set(X_engineered.columns) - set(X.columns)
+    for feat in sorted(new_features):
+        print(f"  - {feat}")
+    
+    # Feature selection
+    print("\n" + "="*50)
+    selector = FeatureSelector(k=20, method='correlation')
+    selector.fit(X_engineered, y)
+    X_selected = selector.transform(X_engineered)
+    
+    print(f"\nTop 20 selected features:")
+    for i, feat in enumerate(selector.get_feature_names(), 1):
+        print(f"  {i}. {feat}")
+    
+    print(f"\nFinal feature count: {X_selected.shape[1]}")
+    print("✓ Feature engineering complete!")
