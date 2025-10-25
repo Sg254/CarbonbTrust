@@ -1,0 +1,436 @@
+"""
+Hospital Readmission Prediction - Deployment API
+=================================================
+REST API for model deployment with HIPAA compliance features.
+Uses Flask for API framework.
+"""
+
+from flask import Flask, request, jsonify
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+import joblib
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import hashlib
+import logging
+import json
+from functools import wraps
+import secrets
+
+# Initialize Flask app
+app = Flask(__name__)
+app.config['SECRET_KEY'] = secrets.token_hex(32)
+
+# Rate limiting for API security
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["100 per hour"]
+)
+
+# Configure logging (HIPAA audit trail requirement)
+logging.basicConfig(
+    filename='api_audit.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load model (in production, use secure model storage)
+MODEL_PATH = 'readmission_model.pkl'
+model_data = None
+
+def load_model():
+    """Load the trained model."""
+    global model_data
+    try:
+        model_data = joblib.load(MODEL_PATH)
+        logger.info("Model loaded successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to load model: {str(e)}")
+        return False
+
+# Initialize model on startup
+load_model()
+
+
+class HIPAACompliance:
+    """HIPAA compliance utilities for API."""
+    
+    @staticmethod
+    def anonymize_patient_id(patient_id):
+        """Hash patient ID for logging (de-identification)."""
+        return hashlib.sha256(str(patient_id).encode()).hexdigest()[:16]
+    
+    @staticmethod
+    def log_access(user_id, patient_id, action, result):
+        """Log all PHI access for HIPAA audit trail."""
+        log_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'user_id': user_id,
+            'patient_id_hash': HIPAACompliance.anonymize_patient_id(patient_id),
+            'action': action,
+            'result': result
+        }
+        logger.info(json.dumps(log_entry))
+    
+    @staticmethod
+    def validate_authorization(auth_token):
+        """
+        Validate API authorization token.
+        In production: integrate with hospital's authentication system (OAuth2, SAML).
+        """
+        # Mock validation - replace with real auth
+        if auth_token and auth_token.startswith('Bearer '):
+            return True
+        return False
+
+
+def require_auth(f):
+    """Decorator to require authentication for endpoints."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        
+        if not HIPAACompliance.validate_authorization(auth_header):
+            logger.warning(f"Unauthorized access attempt from {request.remote_addr}")
+            return jsonify({'error': 'Unauthorized'}), 401
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for monitoring."""
+    return jsonify({
+        'status': 'healthy',
+        'model_loaded': model_data is not None,
+        'timestamp': datetime.now().isoformat()
+    }), 200
+
+
+@app.route('/api/v1/predict', methods=['POST'])
+@require_auth
+@limiter.limit("50 per minute")
+def predict_readmission():
+    """
+    Predict readmission risk for a patient.
+    
+    Expected JSON payload:
+    {
+        "patient_id": "12345",
+        "user_id": "clinician_001",
+        "features": {
+            "age": 72,
+            "gender": "F",
+            "num_comorbidities": 3,
+            "has_chf": 1,
+            "has_diabetes": 1,
+            ...
+        }
+    }
+    
+    Returns:
+    {
+        "patient_id": "12345",
+        "risk_score": 78,
+        "risk_category": "high",
+        "top_risk_factors": [...],
+        "recommendations": [...]
+    }
+    """
+    try:
+        # Parse request
+        data = request.get_json()
+        
+        if not data or 'patient_id' not in data or 'features' not in data:
+            return jsonify({'error': 'Invalid request format'}), 400
+        
+        patient_id = data['patient_id']
+        user_id = data.get('user_id', 'unknown')
+        features = data['features']
+        
+        # Validate model is loaded
+        if model_data is None:
+            logger.error("Model not loaded")
+            return jsonify({'error': 'Model not available'}), 503
+        
+        # Prepare features for prediction
+        feature_df = pd.DataFrame([features])
+        
+        # Make prediction
+        model = model_data['model']
+        risk_probability = model.predict_proba(feature_df)[:, 1][0]
+        risk_score = int(risk_probability * 100)
+        
+        # Categorize risk
+        if risk_score >= 70:
+            risk_category = 'high'
+        elif risk_score >= 40:
+            risk_category = 'moderate'
+        else:
+            risk_category = 'low'
+        
+        # Get top risk factors (feature importance)
+        feature_importance = model_data.get('feature_importance')
+        top_risk_factors = []
+        
+        if feature_importance is not None:
+            top_features = feature_importance.head(5)
+            for _, row in top_features.iterrows():
+                feature_name = row['feature']
+                if feature_name in features:
+                    top_risk_factors.append({
+                        'factor': feature_name,
+                        'value': features[feature_name],
+                        'importance': float(row['importance'])
+                    })
+        
+        # Generate recommendations based on risk category
+        recommendations = generate_recommendations(risk_category, features)
+        
+        # Prepare response
+        response = {
+            'patient_id': patient_id,
+            'risk_score': risk_score,
+            'risk_probability': round(risk_probability, 4),
+            'risk_category': risk_category,
+            'top_risk_factors': top_risk_factors,
+            'recommendations': recommendations,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # HIPAA audit log
+        HIPAACompliance.log_access(
+            user_id=user_id,
+            patient_id=patient_id,
+            action='predict_readmission',
+            result='success'
+        )
+        
+        return jsonify(response), 200
+        
+    except Exception as e:
+        logger.error(f"Prediction error: {str(e)}")
+        
+        # Log error (without PHI)
+        HIPAACompliance.log_access(
+            user_id=data.get('user_id', 'unknown'),
+            patient_id=data.get('patient_id', 'unknown'),
+            action='predict_readmission',
+            result='error'
+        )
+        
+        return jsonify({'error': 'Prediction failed'}), 500
+
+
+@app.route('/api/v1/batch_predict', methods=['POST'])
+@require_auth
+@limiter.limit("10 per hour")
+def batch_predict():
+    """
+    Batch prediction for multiple patients.
+    Useful for nightly risk assessment runs.
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'patients' not in data:
+            return jsonify({'error': 'Invalid request format'}), 400
+        
+        user_id = data.get('user_id', 'unknown')
+        patients = data['patients']
+        
+        if len(patients) > 100:
+            return jsonify({'error': 'Batch size limit: 100 patients'}), 400
+        
+        results = []
+        
+        for patient in patients:
+            patient_id = patient['patient_id']
+            features = patient['features']
+            
+            # Prepare features
+            feature_df = pd.DataFrame([features])
+            
+            # Predict
+            model = model_data['model']
+            risk_probability = model.predict_proba(feature_df)[:, 1][0]
+            risk_score = int(risk_probability * 100)
+            
+            # Categorize
+            if risk_score >= 70:
+                risk_category = 'high'
+            elif risk_score >= 40:
+                risk_category = 'moderate'
+            else:
+                risk_category = 'low'
+            
+            results.append({
+                'patient_id': patient_id,
+                'risk_score': risk_score,
+                'risk_category': risk_category
+            })
+            
+            # Log each prediction
+            HIPAACompliance.log_access(
+                user_id=user_id,
+                patient_id=patient_id,
+                action='batch_predict',
+                result='success'
+            )
+        
+        return jsonify({
+            'results': results,
+            'count': len(results),
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Batch prediction error: {str(e)}")
+        return jsonify({'error': 'Batch prediction failed'}), 500
+
+
+@app.route('/api/v1/explain', methods=['POST'])
+@require_auth
+@limiter.limit("30 per minute")
+def explain_prediction():
+    """
+    Provide explanation for a prediction (SHAP values).
+    Helps clinicians understand model decisions.
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'patient_id' not in data or 'features' not in data:
+            return jsonify({'error': 'Invalid request format'}), 400
+        
+        patient_id = data['patient_id']
+        user_id = data.get('user_id', 'unknown')
+        features = data['features']
+        
+        # For demonstration, return feature importance
+        # In production, implement SHAP explanations
+        
+        feature_importance = model_data.get('feature_importance')
+        
+        explanations = []
+        if feature_importance is not None:
+            for _, row in feature_importance.head(10).iterrows():
+                feature_name = row['feature']
+                if feature_name in features:
+                    explanations.append({
+                        'feature': feature_name,
+                        'value': features[feature_name],
+                        'contribution': float(row['importance']),
+                        'interpretation': interpret_feature(feature_name, features[feature_name])
+                    })
+        
+        # Log access
+        HIPAACompliance.log_access(
+            user_id=user_id,
+            patient_id=patient_id,
+            action='explain_prediction',
+            result='success'
+        )
+        
+        return jsonify({
+            'patient_id': patient_id,
+            'explanations': explanations,
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Explanation error: {str(e)}")
+        return jsonify({'error': 'Explanation failed'}), 500
+
+
+def generate_recommendations(risk_category, features):
+    """Generate clinical recommendations based on risk category."""
+    recommendations = []
+    
+    if risk_category == 'high':
+        recommendations.append("⚠️ Schedule intensive discharge planning meeting")
+        recommendations.append("📞 Arrange 48-hour post-discharge phone follow-up")
+        recommendations.append("🏥 Schedule clinic appointment within 5-7 days")
+        
+        if features.get('has_chf', 0) == 1:
+            recommendations.append("💊 Ensure CHF medication reconciliation")
+            recommendations.append("⚖️ Daily weight monitoring instructions")
+        
+        if features.get('lives_alone', 0) == 1:
+            recommendations.append("🏠 Refer to case management for home health evaluation")
+        
+        if not features.get('has_followup_scheduled', 1):
+            recommendations.append("📅 URGENT: Schedule PCP follow-up before discharge")
+    
+    elif risk_category == 'moderate':
+        recommendations.append("📋 Standard discharge planning protocol")
+        recommendations.append("📞 7-day post-discharge phone follow-up")
+        recommendations.append("🏥 Schedule clinic appointment within 14 days")
+        
+        if features.get('num_medications', 0) >= 5:
+            recommendations.append("💊 Medication education and reconciliation")
+    
+    else:  # low risk
+        recommendations.append("✅ Standard discharge instructions")
+        recommendations.append("📋 Provide emergency contact information")
+    
+    return recommendations
+
+
+def interpret_feature(feature_name, value):
+    """Provide human-readable interpretation of feature values."""
+    interpretations = {
+        'age': f"Patient age contributes to overall risk",
+        'num_comorbidities': f"{value} chronic conditions increase complexity",
+        'has_chf': "Congestive heart failure is a significant risk factor",
+        'has_diabetes': "Diabetes requires careful discharge planning",
+        'lives_alone': "Living alone may limit support during recovery",
+        'previous_admissions': f"{value} previous admissions indicate higher risk"
+    }
+    
+    return interpretations.get(feature_name, f"{feature_name} affects readmission risk")
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit exceeded."""
+    logger.warning(f"Rate limit exceeded from {request.remote_addr}")
+    return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    """Handle internal errors."""
+    logger.error(f"Internal server error: {str(e)}")
+    return jsonify({'error': 'Internal server error'}), 500
+
+
+if __name__ == '__main__':
+    # In production, use proper WSGI server (gunicorn, uwsgi)
+    # with HTTPS/TLS encryption
+    
+    print("=" * 70)
+    print("HOSPITAL READMISSION PREDICTION API")
+    print("=" * 70)
+    print("\nSecurity Features:")
+    print("  ✓ Authentication required")
+    print("  ✓ Rate limiting enabled")
+    print("  ✓ HIPAA audit logging")
+    print("  ✓ Patient ID anonymization")
+    print("\nEndpoints:")
+    print("  GET  /health - Health check")
+    print("  POST /api/v1/predict - Single prediction")
+    print("  POST /api/v1/batch_predict - Batch predictions")
+    print("  POST /api/v1/explain - Explain prediction")
+    print("\n" + "=" * 70)
+    print("\n⚠️  WARNING: Use HTTPS in production!")
+    print("⚠️  WARNING: Integrate with hospital authentication system!")
+    print("\nStarting server...")
+    
+    # Development server (NOT for production)
+    app.run(host='127.0.0.1', port=5000, debug=False)
