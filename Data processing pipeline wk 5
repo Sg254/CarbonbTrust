@@ -1,0 +1,307 @@
+"""
+Hospital Readmission Prediction System - Data Preprocessing Pipeline
+=====================================================================
+This module handles data collection, cleaning, and preprocessing.
+"""
+
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from imblearn.over_sampling import SMOTE
+import warnings
+warnings.filterwarnings('ignore')
+
+class ReadmissionDataPreprocessor:
+    """
+    Comprehensive data preprocessing pipeline for readmission prediction.
+    Handles missing data, feature engineering, encoding, and train/test split.
+    """
+    
+    def __init__(self, random_state=42):
+        self.random_state = random_state
+        self.scaler = StandardScaler()
+        self.label_encoders = {}
+        self.numerical_imputer = SimpleImputer(strategy='median')
+        self.categorical_imputer = SimpleImputer(strategy='most_frequent')
+        self.feature_names = None
+        
+    def load_data(self, filepath=None, use_synthetic=True):
+        """
+        Load data from file or generate synthetic data for demonstration.
+        
+        Parameters:
+        -----------
+        filepath : str, optional
+            Path to CSV file containing patient data
+        use_synthetic : bool, default=True
+            If True, generates synthetic data for demonstration
+            
+        Returns:
+        --------
+        pd.DataFrame : Raw patient data
+        """
+        if use_synthetic or filepath is None:
+            print("Generating synthetic patient data for demonstration...")
+            return self._generate_synthetic_data()
+        else:
+            print(f"Loading data from {filepath}...")
+            return pd.read_csv(filepath)
+    
+    def _generate_synthetic_data(self, n_samples=5000):
+        """Generate realistic synthetic patient data."""
+        np.random.seed(self.random_state)
+        
+        # Demographics
+        age = np.random.normal(65, 15, n_samples).clip(18, 95)
+        gender = np.random.choice(['M', 'F'], n_samples, p=[0.48, 0.52])
+        race = np.random.choice(['White', 'Black', 'Hispanic', 'Asian', 'Other'], 
+                                n_samples, p=[0.60, 0.20, 0.12, 0.05, 0.03])
+        
+        # Clinical variables
+        length_of_stay = np.random.exponential(5, n_samples).clip(1, 30)
+        num_comorbidities = np.random.poisson(2.5, n_samples).clip(0, 10)
+        num_medications = np.random.poisson(5, n_samples).clip(0, 20)
+        
+        # Diagnoses (ICD-10 categories)
+        has_chf = np.random.binomial(1, 0.25, n_samples)
+        has_diabetes = np.random.binomial(1, 0.30, n_samples)
+        has_copd = np.random.binomial(1, 0.20, n_samples)
+        has_ckd = np.random.binomial(1, 0.15, n_samples)
+        
+        # Lab values (with some missing data)
+        hemoglobin = np.random.normal(12, 2, n_samples).clip(6, 18)
+        hemoglobin[np.random.random(n_samples) < 0.15] = np.nan
+        
+        creatinine = np.random.lognormal(0.3, 0.5, n_samples).clip(0.5, 8)
+        creatinine[np.random.random(n_samples) < 0.12] = np.nan
+        
+        # Social determinants of health
+        insurance = np.random.choice(['Medicare', 'Medicaid', 'Private', 'Uninsured'], 
+                                    n_samples, p=[0.45, 0.20, 0.30, 0.05])
+        lives_alone = np.random.binomial(1, 0.35, n_samples)
+        has_transportation = np.random.binomial(1, 0.70, n_samples)
+        
+        # Previous utilization
+        previous_admissions = np.random.poisson(0.8, n_samples).clip(0, 10)
+        days_since_last_admission = np.where(
+            previous_admissions > 0,
+            np.random.exponential(180, n_samples).clip(7, 730),
+            999  # No previous admission
+        )
+        
+        # Discharge factors
+        discharge_day = np.random.choice(['Monday', 'Tuesday', 'Wednesday', 
+                                         'Thursday', 'Friday', 'Saturday', 'Sunday'], 
+                                        n_samples)
+        has_followup_scheduled = np.random.binomial(1, 0.65, n_samples)
+        
+        # Calculate readmission probability with realistic risk factors
+        risk_score = (
+            0.02 * age +
+            0.15 * num_comorbidities +
+            0.10 * num_medications +
+            0.25 * has_chf +
+            0.15 * has_diabetes +
+            0.10 * has_copd +
+            0.20 * has_ckd +
+            0.30 * (previous_admissions > 0) +
+            0.20 * lives_alone +
+            -0.25 * has_followup_scheduled +
+            -0.15 * has_transportation +
+            0.10 * (insurance == 'Medicaid').astype(int) +
+            0.15 * (insurance == 'Uninsured').astype(int) +
+            0.10 * ((discharge_day == 'Friday') | (discharge_day == 'Saturday')).astype(int) +
+            np.random.normal(0, 0.5, n_samples)  # Random noise
+        )
+        
+        # Convert to probability and generate binary outcome
+        prob_readmit = 1 / (1 + np.exp(-risk_score + 3))  # Sigmoid with offset
+        readmitted_30d = (np.random.random(n_samples) < prob_readmit).astype(int)
+        
+        # Create DataFrame
+        data = pd.DataFrame({
+            'patient_id': range(1, n_samples + 1),
+            'age': age,
+            'gender': gender,
+            'race': race,
+            'length_of_stay': length_of_stay,
+            'num_comorbidities': num_comorbidities,
+            'num_medications': num_medications,
+            'has_chf': has_chf,
+            'has_diabetes': has_diabetes,
+            'has_copd': has_copd,
+            'has_ckd': has_ckd,
+            'hemoglobin': hemoglobin,
+            'creatinine': creatinine,
+            'insurance': insurance,
+            'lives_alone': lives_alone,
+            'has_transportation': has_transportation,
+            'previous_admissions': previous_admissions,
+            'days_since_last_admission': days_since_last_admission,
+            'discharge_day': discharge_day,
+            'has_followup_scheduled': has_followup_scheduled,
+            'readmitted_30d': readmitted_30d
+        })
+        
+        print(f"Generated {n_samples} synthetic patient records")
+        print(f"Readmission rate: {readmitted_30d.mean():.1%}")
+        
+        return data
+    
+    def analyze_missing_data(self, df):
+        """Analyze and report missing data patterns."""
+        missing_summary = pd.DataFrame({
+            'column': df.columns,
+            'missing_count': df.isnull().sum(),
+            'missing_percent': (df.isnull().sum() / len(df) * 100).round(2)
+        }).sort_values('missing_percent', ascending=False)
+        
+        print("\n=== Missing Data Analysis ===")
+        print(missing_summary[missing_summary['missing_count'] > 0])
+        
+        return missing_summary
+    
+    def preprocess(self, df, fit=True):
+        """
+        Main preprocessing pipeline.
+        
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            Raw patient data
+        fit : bool, default=True
+            If True, fit preprocessing transformations. Set False for test data.
+            
+        Returns:
+        --------
+        X : pd.DataFrame
+            Preprocessed features
+        y : pd.Series
+            Target variable (readmitted_30d)
+        """
+        df = df.copy()
+        
+        # Separate target variable
+        if 'readmitted_30d' in df.columns:
+            y = df['readmitted_30d']
+            df = df.drop('readmitted_30d', axis=1)
+        else:
+            y = None
+        
+        # Remove patient ID (not a feature)
+        if 'patient_id' in df.columns:
+            df = df.drop('patient_id', axis=1)
+        
+        # Identify column types
+        numerical_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+        
+        print(f"\n=== Preprocessing {len(df)} records ===")
+        print(f"Numerical features: {len(numerical_cols)}")
+        print(f"Categorical features: {len(categorical_cols)}")
+        
+        # Handle missing data
+        if fit:
+            df[numerical_cols] = self.numerical_imputer.fit_transform(df[numerical_cols])
+            if categorical_cols:
+                df[categorical_cols] = self.categorical_imputer.fit_transform(df[categorical_cols])
+        else:
+            df[numerical_cols] = self.numerical_imputer.transform(df[numerical_cols])
+            if categorical_cols:
+                df[categorical_cols] = self.categorical_imputer.transform(df[categorical_cols])
+        
+        # Encode categorical variables
+        df_encoded = df.copy()
+        for col in categorical_cols:
+            if fit:
+                le = LabelEncoder()
+                df_encoded[col] = le.fit_transform(df[col])
+                self.label_encoders[col] = le
+            else:
+                le = self.label_encoders[col]
+                # Handle unseen categories
+                df_encoded[col] = df[col].map(lambda x: le.transform([x])[0] 
+                                             if x in le.classes_ else -1)
+        
+        # One-hot encode high-cardinality categoricals (if needed)
+        # For now, we'll use label encoding for simplicity
+        
+        # Standardize numerical features
+        if fit:
+            df_encoded[numerical_cols] = self.scaler.fit_transform(df_encoded[numerical_cols])
+        else:
+            df_encoded[numerical_cols] = self.scaler.transform(df_encoded[numerical_cols])
+        
+        self.feature_names = df_encoded.columns.tolist()
+        
+        return df_encoded, y
+    
+    def create_train_test_split(self, X, y, test_size=0.2, val_size=0.1):
+        """
+        Create stratified train/validation/test splits.
+        
+        Returns:
+        --------
+        X_train, X_val, X_test, y_train, y_val, y_test
+        """
+        # First split: separate test set
+        X_temp, X_test, y_temp, y_test = train_test_split(
+            X, y, test_size=test_size, stratify=y, random_state=self.random_state
+        )
+        
+        # Second split: separate validation set from training
+        val_size_adjusted = val_size / (1 - test_size)
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_temp, y_temp, test_size=val_size_adjusted, 
+            stratify=y_temp, random_state=self.random_state
+        )
+        
+        print(f"\n=== Data Split ===")
+        print(f"Training set: {len(X_train)} ({len(X_train)/len(X)*100:.1f}%)")
+        print(f"Validation set: {len(X_val)} ({len(X_val)/len(X)*100:.1f}%)")
+        print(f"Test set: {len(X_test)} ({len(X_test)/len(X)*100:.1f}%)")
+        print(f"\nReadmission rates:")
+        print(f"  Train: {y_train.mean():.1%}")
+        print(f"  Validation: {y_val.mean():.1%}")
+        print(f"  Test: {y_test.mean():.1%}")
+        
+        return X_train, X_val, X_test, y_train, y_val, y_test
+    
+    def apply_smote(self, X_train, y_train):
+        """Apply SMOTE to balance training data."""
+        print("\n=== Applying SMOTE ===")
+        print(f"Original class distribution: {np.bincount(y_train)}")
+        
+        smote = SMOTE(random_state=self.random_state)
+        X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train)
+        
+        print(f"Balanced class distribution: {np.bincount(y_train_balanced)}")
+        
+        return X_train_balanced, y_train_balanced
+
+
+# Example usage
+if __name__ == "__main__":
+    # Initialize preprocessor
+    preprocessor = ReadmissionDataPreprocessor(random_state=42)
+    
+    # Load or generate data
+    df = preprocessor.load_data(use_synthetic=True)
+    
+    # Analyze missing data
+    preprocessor.analyze_missing_data(df)
+    
+    # Preprocess
+    X, y = preprocessor.preprocess(df, fit=True)
+    
+    # Create splits
+    X_train, X_val, X_test, y_train, y_val, y_test = preprocessor.create_train_test_split(X, y)
+    
+    # Apply SMOTE
+    X_train_balanced, y_train_balanced = preprocessor.apply_smote(X_train, y_train)
+    
+    print("\n✓ Preprocessing complete!")
+    print(f"Features: {X_train.shape[1]}")
+    print(f"Training samples (after SMOTE): {len(X_train_balanced)}")
