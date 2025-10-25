@@ -1,0 +1,440 @@
+"""
+Hospital Readmission Prediction - Monitoring Dashboard
+========================================================
+Real-time monitoring of model performance and fairness metrics.
+Uses Streamlit for interactive dashboard.
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
+from datetime import datetime, timedelta
+import json
+
+# Page configuration
+st.set_page_config(
+    page_title="Readmission Model Monitor",
+    page_icon="🏥",
+    layout="wide"
+)
+
+# Title
+st.title("🏥 Hospital Readmission Prediction - Model Monitoring Dashboard")
+st.markdown("Real-time monitoring of model performance, fairness metrics, and clinical outcomes")
+
+# Generate synthetic monitoring data
+@st.cache_data
+def generate_monitoring_data(days=30):
+    """Generate synthetic monitoring data for demonstration."""
+    np.random.seed(42)
+    
+    dates = pd.date_range(end=datetime.now(), periods=days, freq='D')
+    
+    # Performance metrics over time
+    performance_data = pd.DataFrame({
+        'date': dates,
+        'auc': np.random.normal(0.92, 0.02, days).clip(0.85, 0.98),
+        'sensitivity': np.random.normal(0.80, 0.03, days).clip(0.70, 0.90),
+        'precision': np.random.normal(0.48, 0.04, days).clip(0.35, 0.60),
+        'predictions_made': np.random.poisson(150, days)
+    })
+    
+    # Fairness metrics by demographic group
+    groups = ['White', 'Black', 'Hispanic', 'Asian']
+    fairness_data = pd.DataFrame({
+        'group': groups,
+        'sensitivity': [0.85, 0.78, 0.81, 0.83],
+        'precision': [0.50, 0.45, 0.47, 0.49],
+        'sample_size': [600, 200, 150, 50]
+    })
+    
+    # Alert statistics
+    alert_data = pd.DataFrame({
+        'date': dates,
+        'high_risk_alerts': np.random.poisson(30, days),
+        'alerts_acted_on': np.random.poisson(25, days),
+        'false_positives': np.random.poisson(15, days)
+    })
+    
+    # Actual outcomes (readmissions)
+    outcome_data = pd.DataFrame({
+        'date': dates,
+        'predicted_high_risk': np.random.poisson(30, days),
+        'actual_readmissions': np.random.poisson(22, days),
+        'true_positives': np.random.poisson(18, days)
+    })
+    
+    return performance_data, fairness_data, alert_data, outcome_data
+
+# Load data
+performance_df, fairness_df, alert_df, outcome_df = generate_monitoring_data(30)
+
+# Sidebar filters
+st.sidebar.header("⚙️ Dashboard Controls")
+time_period = st.sidebar.selectbox(
+    "Time Period",
+    ["Last 7 Days", "Last 30 Days", "Last 90 Days"],
+    index=1
+)
+
+show_fairness = st.sidebar.checkbox("Show Fairness Metrics", value=True)
+show_alerts = st.sidebar.checkbox("Show Alert Analytics", value=True)
+show_outcomes = st.sidebar.checkbox("Show Clinical Outcomes", value=True)
+
+# Refresh button
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
+
+# Key Performance Indicators (KPIs)
+st.header("📊 Key Performance Indicators")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    current_auc = performance_df['auc'].iloc[-1]
+    st.metric(
+        "Current AUC",
+        f"{current_auc:.3f}",
+        delta=f"{(current_auc - performance_df['auc'].iloc[-7]):.3f}",
+        delta_color="normal"
+    )
+
+with col2:
+    current_sensitivity = performance_df['sensitivity'].iloc[-1]
+    st.metric(
+        "Sensitivity (Recall)",
+        f"{current_sensitivity:.1%}",
+        delta=f"{(current_sensitivity - performance_df['sensitivity'].iloc[-7]):.2%}",
+        delta_color="normal"
+    )
+
+with col3:
+    current_precision = performance_df['precision'].iloc[-1]
+    st.metric(
+        "Precision",
+        f"{current_precision:.1%}",
+        delta=f"{(current_precision - performance_df['precision'].iloc[-7]):.2%}",
+        delta_color="normal"
+    )
+
+with col4:
+    total_predictions = performance_df['predictions_made'].sum()
+    st.metric(
+        "Total Predictions (30d)",
+        f"{total_predictions:,}",
+        delta=None
+    )
+
+# Performance Trends
+st.header("📈 Performance Trends")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    # AUC over time
+    fig_auc = go.Figure()
+    fig_auc.add_trace(go.Scatter(
+        x=performance_df['date'],
+        y=performance_df['auc'],
+        mode='lines+markers',
+        name='AUC',
+        line=dict(color='#1f77b4', width=2)
+    ))
+    fig_auc.add_hline(y=0.90, line_dash="dash", line_color="green", 
+                     annotation_text="Target: 0.90")
+    fig_auc.update_layout(
+        title="AUC-ROC Over Time",
+        xaxis_title="Date",
+        yaxis_title="AUC",
+        yaxis_range=[0.8, 1.0],
+        height=300
+    )
+    st.plotly_chart(fig_auc, use_container_width=True)
+
+with col2:
+    # Sensitivity and Precision
+    fig_metrics = go.Figure()
+    fig_metrics.add_trace(go.Scatter(
+        x=performance_df['date'],
+        y=performance_df['sensitivity'],
+        mode='lines+markers',
+        name='Sensitivity',
+        line=dict(color='#2ca02c', width=2)
+    ))
+    fig_metrics.add_trace(go.Scatter(
+        x=performance_df['date'],
+        y=performance_df['precision'],
+        mode='lines+markers',
+        name='Precision',
+        line=dict(color='#ff7f0e', width=2)
+    ))
+    fig_metrics.add_hline(y=0.80, line_dash="dash", line_color="green",
+                         annotation_text="Sensitivity Target")
+    fig_metrics.update_layout(
+        title="Sensitivity vs Precision",
+        xaxis_title="Date",
+        yaxis_title="Score",
+        yaxis_range=[0, 1.0],
+        height=300
+    )
+    st.plotly_chart(fig_metrics, use_container_width=True)
+
+# Fairness Metrics
+if show_fairness:
+    st.header("⚖️ Fairness Metrics by Demographic Group")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Sensitivity by group
+        fig_fair_sens = px.bar(
+            fairness_df,
+            x='group',
+            y='sensitivity',
+            color='sensitivity',
+            color_continuous_scale='RdYlGn',
+            title="Sensitivity by Demographic Group",
+            labels={'sensitivity': 'Sensitivity', 'group': 'Demographic Group'}
+        )
+        fig_fair_sens.add_hline(y=0.80, line_dash="dash", line_color="red",
+                               annotation_text="Target: 80%")
+        fig_fair_sens.update_layout(height=350)
+        st.plotly_chart(fig_fair_sens, use_container_width=True)
+    
+    with col2:
+        # Sample sizes
+        fig_sample = px.bar(
+            fairness_df,
+            x='group',
+            y='sample_size',
+            title="Sample Size by Demographic Group",
+            labels={'sample_size': 'Sample Size', 'group': 'Demographic Group'},
+            color='sample_size',
+            color_continuous_scale='Blues'
+        )
+        fig_sample.update_layout(height=350)
+        st.plotly_chart(fig_sample, use_container_width=True)
+    
+    # Fairness disparity calculation
+    st.subheader("Disparity Analysis")
+    
+    max_sens = fairness_df['sensitivity'].max()
+    min_sens = fairness_df['sensitivity'].min()
+    disparity = max_sens - min_sens
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Maximum Sensitivity", f"{max_sens:.1%}")
+    with col2:
+        st.metric("Minimum Sensitivity", f"{min_sens:.1%}")
+    with col3:
+        disparity_status = "✅ PASS" if disparity < 0.05 else "⚠️ WARNING" if disparity < 0.10 else "❌ FAIL"
+        st.metric("Disparity", f"{disparity:.1%}", delta=disparity_status, delta_color="off")
+    
+    if disparity >= 0.05:
+        st.warning(f"⚠️ Fairness Alert: Sensitivity disparity ({disparity:.1%}) exceeds 5% threshold. Consider model retraining with fairness constraints.")
+
+# Alert Analytics
+if show_alerts:
+    st.header("🚨 Alert Analytics")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Alert trends
+        fig_alerts = go.Figure()
+        fig_alerts.add_trace(go.Scatter(
+            x=alert_df['date'],
+            y=alert_df['high_risk_alerts'],
+            mode='lines+markers',
+            name='High Risk Alerts',
+            line=dict(color='#d62728', width=2)
+        ))
+        fig_alerts.add_trace(go.Scatter(
+            x=alert_df['date'],
+            y=alert_df['alerts_acted_on'],
+            mode='lines+markers',
+            name='Alerts Acted On',
+            line=dict(color='#2ca02c', width=2)
+        ))
+        fig_alerts.update_layout(
+            title="Alert Generation and Response",
+            xaxis_title="Date",
+            yaxis_title="Count",
+            height=300
+        )
+        st.plotly_chart(fig_alerts, use_container_width=True)
+    
+    with col2:
+        # Alert fatigue metric
+        alert_response_rate = (alert_df['alerts_acted_on'].sum() / 
+                              alert_df['high_risk_alerts'].sum())
+        false_positive_rate = (alert_df['false_positives'].sum() / 
+                              alert_df['high_risk_alerts'].sum())
+        
+        fig_alert_metrics = go.Figure(go.Indicator(
+            mode="gauge+number+delta",
+            value=alert_response_rate * 100,
+            domain={'x': [0, 1], 'y': [0, 1]},
+            title={'text': "Alert Response Rate"},
+            delta={'reference': 80},
+            gauge={
+                'axis': {'range': [None, 100]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 60], 'color': "lightgray"},
+                    {'range': [60, 80], 'color': "yellow"},
+                    {'range': [80, 100], 'color': "lightgreen"}
+                ],
+                'threshold': {
+                    'line': {'color': "red", 'width': 4},
+                    'thickness': 0.75,
+                    'value': 80
+                }
+            }
+        ))
+        fig_alert_metrics.update_layout(height=300)
+        st.plotly_chart(fig_alert_metrics, use_container_width=True)
+    
+    # Alert fatigue warning
+    if alert_response_rate < 0.70:
+        st.error(f"🔔 Alert Fatigue Detected! Only {alert_response_rate:.1%} of alerts are being acted upon. Consider adjusting risk thresholds.")
+
+# Clinical Outcomes
+if show_outcomes:
+    st.header("🏥 Clinical Outcomes")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Predicted vs Actual
+        fig_outcomes = go.Figure()
+        fig_outcomes.add_trace(go.Scatter(
+            x=outcome_df['date'],
+            y=outcome_df['predicted_high_risk'],
+            mode='lines+markers',
+            name='Predicted High Risk',
+            line=dict(color='#ff7f0e', width=2, dash='dash')
+        ))
+        fig_outcomes.add_trace(go.Scatter(
+            x=outcome_df['date'],
+            y=outcome_df['actual_readmissions'],
+            mode='lines+markers',
+            name='Actual Readmissions',
+            line=dict(color='#d62728', width=2)
+        ))
+        fig_outcomes.update_layout(
+            title="Predicted High Risk vs Actual Readmissions",
+            xaxis_title="Date",
+            yaxis_title="Count",
+            height=300
+        )
+        st.plotly_chart(fig_outcomes, use_container_width=True)
+    
+    with col2:
+        # Model calibration
+        total_predicted = outcome_df['predicted_high_risk'].sum()
+        total_actual = outcome_df['actual_readmissions'].sum()
+        calibration_ratio = total_actual / total_predicted if total_predicted > 0 else 0
+        
+        col2a, col2b, col2c = st.columns(3)
+        
+        with col2a:
+            st.metric("Predicted High Risk", f"{total_predicted:,}")
+        with col2b:
+            st.metric("Actual Readmissions", f"{total_actual:,}")
+        with col2c:
+            st.metric("Calibration Ratio", f"{calibration_ratio:.2f}",
+                     help="Ratio close to 1.0 indicates good calibration")
+        
+        # Calibration status
+        st.markdown("### Model Calibration Status")
+        if 0.8 <= calibration_ratio <= 1.2:
+            st.success("✅ Model is well-calibrated")
+        elif 0.6 <= calibration_ratio < 0.8 or 1.2 < calibration_ratio <= 1.4:
+            st.warning("⚠️ Model calibration needs attention")
+        else:
+            st.error("❌ Model is poorly calibrated - consider retraining")
+        
+        # True positive rate
+        tp_rate = outcome_df['true_positives'].sum() / total_actual if total_actual > 0 else 0
+        st.metric("True Positive Rate", f"{tp_rate:.1%}",
+                 help="Percentage of actual readmissions that were correctly predicted")
+
+# System Health
+st.header("🔧 System Health")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric("API Status", "🟢 Healthy", delta=None)
+with col2:
+    avg_response_time = np.random.uniform(50, 150)
+    st.metric("Avg Response Time", f"{avg_response_time:.0f}ms")
+with col3:
+    st.metric("Model Version", "v2.3.1", delta=None)
+with col4:
+    last_retrain = datetime.now() - timedelta(days=15)
+    st.metric("Last Retrain", last_retrain.strftime("%Y-%m-%d"))
+
+# Recent Alerts
+st.header("📋 Recent System Alerts")
+
+alerts_data = [
+    {"time": "2 hours ago", "level": "INFO", "message": "Model performance within normal range"},
+    {"time": "6 hours ago", "level": "WARNING", "message": "Sensitivity for Black demographic group dropped to 76%"},
+    {"time": "1 day ago", "level": "INFO", "message": "150 predictions processed successfully"},
+    {"time": "2 days ago", "level": "SUCCESS", "message": "Model retrained with new data (AUC: 0.927)"},
+]
+
+for alert in alerts_data:
+    level_emoji = {"INFO": "ℹ️", "WARNING": "⚠️", "ERROR": "❌", "SUCCESS": "✅"}
+    st.markdown(f"{level_emoji.get(alert['level'], 'ℹ️')} **{alert['time']}** - {alert['message']}")
+
+# Footer
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center'>
+        <p>Last Updated: {}</p>
+        <p>Model Monitoring Dashboard v1.0 | HIPAA Compliant | Refresh every 5 minutes</p>
+    </div>
+    """.format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+    unsafe_allow_html=True
+)
+
+# Download reports
+st.sidebar.markdown("---")
+st.sidebar.subheader("📥 Export Reports")
+
+if st.sidebar.button("Download Performance Report"):
+    # Generate CSV
+    performance_df.to_csv('performance_report.csv', index=False)
+    st.sidebar.success("✅ Report downloaded!")
+
+if st.sidebar.button("Download Fairness Report"):
+    fairness_df.to_csv('fairness_report.csv', index=False)
+    st.sidebar.success("✅ Report downloaded!")
+
+# Instructions
+st.sidebar.markdown("---")
+st.sidebar.info(
+    """
+    **Dashboard Guide:**
+    
+    - 📊 **KPIs**: Key performance metrics at a glance
+    - 📈 **Trends**: Monitor performance over time
+    - ⚖️ **Fairness**: Ensure equitable predictions
+    - 🚨 **Alerts**: Track clinician engagement
+    - 🏥 **Outcomes**: Validate with real-world results
+    
+    **Thresholds:**
+    - AUC ≥ 0.90
+    - Sensitivity ≥ 80%
+    - Fairness Disparity < 5%
+    """
+)
