@@ -1,0 +1,395 @@
+"""
+Hospital Readmission Prediction - Model Training with Fairness
+================================================================
+Trains XGBoost model with fairness constraints and hyperparameter tuning.
+"""
+
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.metrics import (
+    roc_auc_score, precision_score, recall_score, f1_score,
+    confusion_matrix, classification_report, roc_curve
+)
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import Dict, Tuple
+import joblib
+
+class FairReadmissionModel:
+    """
+    XGBoost model with fairness monitoring for readmission prediction.
+    """
+    
+    def __init__(self, random_state=42):
+        self.random_state = random_state
+        self.model = None
+        self.best_params = None
+        self.feature_importance = None
+        
+    def train_baseline_model(self, X_train, y_train, X_val, y_val):
+        """Train a baseline XGBoost model with default parameters."""
+        print("=== Training Baseline XGBoost Model ===\n")
+        
+        # Calculate scale_pos_weight for class imbalance
+        scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
+        
+        baseline_model = xgb.XGBClassifier(
+            max_depth=5,
+            learning_rate=0.1,
+            n_estimators=100,
+            objective='binary:logistic',
+            scale_pos_weight=scale_pos_weight,
+            random_state=self.random_state,
+            eval_metric='auc'
+        )
+        
+        # Train with early stopping
+        baseline_model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            early_stopping_rounds=10,
+            verbose=False
+        )
+        
+        # Evaluate
+        y_pred_proba = baseline_model.predict_proba(X_val)[:, 1]
+        y_pred = (y_pred_proba >= 0.5).astype(int)
+        
+        auc = roc_auc_score(y_val, y_pred_proba)
+        precision = precision_score(y_val, y_pred)
+        recall = recall_score(y_val, y_pred)
+        f1 = f1_score(y_val, y_pred)
+        
+        print(f"Baseline Performance:")
+        print(f"  AUC: {auc:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall: {recall:.4f}")
+        print(f"  F1-Score: {f1:.4f}\n")
+        
+        return baseline_model, {'auc': auc, 'precision': precision, 'recall': recall, 'f1': f1}
+    
+    def hyperparameter_tuning(self, X_train, y_train, X_val, y_val):
+        """
+        Perform hyperparameter tuning with cross-validation.
+        Uses Regularization to prevent overfitting.
+        """
+        print("=== Hyperparameter Tuning with Cross-Validation ===\n")
+        
+        # Calculate scale_pos_weight
+        scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
+        
+        # Define parameter grid
+        param_grid = {
+            'max_depth': [3, 5, 7],
+            'learning_rate': [0.01, 0.05, 0.1],
+            'n_estimators': [100, 300, 500],
+            'min_child_weight': [1, 3, 5],
+            'subsample': [0.6, 0.8, 1.0],
+            'colsample_bytree': [0.6, 0.8, 1.0],
+            'reg_alpha': [0, 0.1, 1],  # L1 regularization
+            'reg_lambda': [1, 5, 10]   # L2 regularization
+        }
+        
+        # For demonstration, use a smaller grid
+        param_grid_small = {
+            'max_depth': [3, 5],
+            'learning_rate': [0.05, 0.1],
+            'n_estimators': [100, 300],
+            'reg_alpha': [0, 0.1],
+            'reg_lambda': [1, 5]
+        }
+        
+        base_model = xgb.XGBClassifier(
+            objective='binary:logistic',
+            scale_pos_weight=scale_pos_weight,
+            random_state=self.random_state,
+            eval_metric='auc'
+        )
+        
+        # 5-Fold stratified cross-validation
+        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state)
+        
+        # Grid search
+        grid_search = GridSearchCV(
+            base_model,
+            param_grid_small,
+            cv=cv,
+            scoring='roc_auc',
+            n_jobs=-1,
+            verbose=1
+        )
+        
+        print("Starting grid search (this may take a few minutes)...")
+        grid_search.fit(X_train, y_train)
+        
+        self.best_params = grid_search.best_params_
+        self.model = grid_search.best_estimator_
+        
+        print(f"\nBest parameters found:")
+        for param, value in self.best_params.items():
+            print(f"  {param}: {value}")
+        
+        # Evaluate on validation set
+        y_pred_proba = self.model.predict_proba(X_val)[:, 1]
+        y_pred = (y_pred_proba >= 0.5).astype(int)
+        
+        auc = roc_auc_score(y_val, y_pred_proba)
+        precision = precision_score(y_val, y_pred)
+        recall = recall_score(y_val, y_pred)
+        f1 = f1_score(y_val, y_pred)
+        
+        print(f"\nTuned Model Performance:")
+        print(f"  AUC: {auc:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall: {recall:.4f}")
+        print(f"  F1-Score: {f1:.4f}")
+        
+        return self.model, {'auc': auc, 'precision': precision, 'recall': recall, 'f1': f1}
+    
+    def train_with_early_stopping(self, X_train, y_train, X_val, y_val, 
+                                   custom_params=None):
+        """
+        Train model with early stopping to prevent overfitting.
+        """
+        print("\n=== Training with Early Stopping ===\n")
+        
+        scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
+        
+        params = custom_params or {
+            'max_depth': 5,
+            'learning_rate': 0.05,
+            'n_estimators': 500,
+            'min_child_weight': 3,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'reg_alpha': 0.1,
+            'reg_lambda': 5,
+            'scale_pos_weight': scale_pos_weight,
+            'random_state': self.random_state,
+            'eval_metric': 'auc'
+        }
+        
+        self.model = xgb.XGBClassifier(**params)
+        
+        # Train with early stopping
+        self.model.fit(
+            X_train, y_train,
+            eval_set=[(X_train, y_train), (X_val, y_val)],
+            early_stopping_rounds=50,
+            verbose=False
+        )
+        
+        print(f"Training stopped at iteration: {self.model.best_iteration}")
+        
+        # Get feature importance
+        self.feature_importance = pd.DataFrame({
+            'feature': X_train.columns,
+            'importance': self.model.feature_importances_
+        }).sort_values('importance', ascending=False)
+        
+        return self.model
+    
+    def evaluate_model(self, X_test, y_test, threshold=0.5):
+        """
+        Comprehensive model evaluation.
+        """
+        print("\n=== Model Evaluation ===\n")
+        
+        # Predictions
+        y_pred_proba = self.model.predict_proba(X_test)[:, 1]
+        y_pred = (y_pred_proba >= threshold).astype(int)
+        
+        # Metrics
+        auc = roc_auc_score(y_test, y_pred_proba)
+        precision = precision_score(y_test, y_pred)
+        recall = recall_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
+        
+        print(f"Test Set Performance (threshold={threshold}):")
+        print(f"  AUC-ROC: {auc:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall (Sensitivity): {recall:.4f}")
+        print(f"  F1-Score: {f1:.4f}")
+        
+        # Confusion matrix
+        cm = confusion_matrix(y_test, y_pred)
+        tn, fp, fn, tp = cm.ravel()
+        
+        specificity = tn / (tn + fp)
+        npv = tn / (tn + fn) if (tn + fn) > 0 else 0
+        
+        print(f"\nConfusion Matrix:")
+        print(f"  True Negatives:  {tn}")
+        print(f"  False Positives: {fp}")
+        print(f"  False Negatives: {fn}")
+        print(f"  True Positives:  {tp}")
+        print(f"\nAdditional Metrics:")
+        print(f"  Specificity: {specificity:.4f}")
+        print(f"  Negative Predictive Value: {npv:.4f}")
+        
+        # Classification report
+        print("\nClassification Report:")
+        print(classification_report(y_test, y_pred, 
+                                   target_names=['Not Readmitted', 'Readmitted']))
+        
+        return {
+            'auc': auc,
+            'precision': precision,
+            'recall': recall,
+            'f1': f1,
+            'specificity': specificity,
+            'confusion_matrix': cm,
+            'predictions': y_pred,
+            'probabilities': y_pred_proba
+        }
+    
+    def plot_feature_importance(self, top_n=20):
+        """Plot top N most important features."""
+        if self.feature_importance is None:
+            print("Feature importance not available. Train model first.")
+            return
+        
+        plt.figure(figsize=(10, 8))
+        top_features = self.feature_importance.head(top_n)
+        
+        sns.barplot(data=top_features, x='importance', y='feature', palette='viridis')
+        plt.title(f'Top {top_n} Feature Importances')
+        plt.xlabel('Importance Score')
+        plt.ylabel('Feature')
+        plt.tight_layout()
+        plt.show()
+        
+        return top_features
+    
+    def plot_roc_curve(self, X_test, y_test):
+        """Plot ROC curve."""
+        y_pred_proba = self.model.predict_proba(X_test)[:, 1]
+        fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba)
+        auc = roc_auc_score(y_test, y_pred_proba)
+        
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr, tpr, label=f'ROC Curve (AUC = {auc:.4f})', linewidth=2)
+        plt.plot([0, 1], [0, 1], 'k--', label='Random Classifier')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate (Recall)')
+        plt.title('ROC Curve - Readmission Prediction')
+        plt.legend()
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+    
+    def find_optimal_threshold(self, X_val, y_val, target_recall=0.80):
+        """
+        Find optimal probability threshold to achieve target recall.
+        """
+        y_pred_proba = self.model.predict_proba(X_val)[:, 1]
+        
+        # Try different thresholds
+        thresholds = np.arange(0.1, 0.9, 0.01)
+        results = []
+        
+        for thresh in thresholds:
+            y_pred = (y_pred_proba >= thresh).astype(int)
+            precision = precision_score(y_val, y_pred)
+            recall = recall_score(y_val, y_pred)
+            f1 = f1_score(y_val, y_pred)
+            
+            results.append({
+                'threshold': thresh,
+                'precision': precision,
+                'recall': recall,
+                'f1': f1
+            })
+        
+        results_df = pd.DataFrame(results)
+        
+        # Find threshold closest to target recall
+        target_row = results_df.iloc[(results_df['recall'] - target_recall).abs().argsort()[:1]]
+        
+        print(f"\n=== Optimal Threshold Analysis ===")
+        print(f"Target Recall: {target_recall:.2f}")
+        print(f"Optimal Threshold: {target_row['threshold'].values[0]:.3f}")
+        print(f"Achieved Recall: {target_row['recall'].values[0]:.4f}")
+        print(f"Precision: {target_row['precision'].values[0]:.4f}")
+        print(f"F1-Score: {target_row['f1'].values[0]:.4f}")
+        
+        return target_row['threshold'].values[0], results_df
+    
+    def save_model(self, filepath='readmission_model.pkl'):
+        """Save trained model to disk."""
+        joblib.dump({
+            'model': self.model,
+            'best_params': self.best_params,
+            'feature_importance': self.feature_importance
+        }, filepath)
+        print(f"\nModel saved to: {filepath}")
+    
+    def load_model(self, filepath='readmission_model.pkl'):
+        """Load trained model from disk."""
+        data = joblib.load(filepath)
+        self.model = data['model']
+        self.best_params = data.get('best_params')
+        self.feature_importance = data.get('feature_importance')
+        print(f"Model loaded from: {filepath}")
+
+
+# Example usage
+if __name__ == "__main__":
+    # Generate synthetic data for demonstration
+    np.random.seed(42)
+    n_samples = 3000
+    n_features = 25
+    
+    X = pd.DataFrame(
+        np.random.randn(n_samples, n_features),
+        columns=[f'feature_{i}' for i in range(n_features)]
+    )
+    
+    # Create target with some signal
+    y = (
+        (X['feature_0'] > 0.5) |
+        (X['feature_1'] > 0.3) |
+        ((X['feature_2'] > 0) & (X['feature_3'] > 0))
+    ).astype(int)
+    
+    # Add some noise
+    noise_mask = np.random.random(n_samples) < 0.3
+    y[noise_mask] = 1 - y[noise_mask]
+    
+    print(f"Dataset: {n_samples} samples, {n_features} features")
+    print(f"Readmission rate: {y.mean():.1%}\n")
+    
+    # Split data
+    from sklearn.model_selection import train_test_split
+    
+    X_temp, X_test, y_temp, y_test = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_temp, y_temp, test_size=0.125, stratify=y_temp, random_state=42
+    )
+    
+    # Initialize model
+    model = FairReadmissionModel(random_state=42)
+    
+    # Train baseline
+    baseline, baseline_metrics = model.train_baseline_model(X_train, y_train, X_val, y_val)
+    
+    # Hyperparameter tuning
+    tuned_model, tuned_metrics = model.hyperparameter_tuning(X_train, y_train, X_val, y_val)
+    
+    # Train with early stopping
+    final_model = model.train_with_early_stopping(X_train, y_train, X_val, y_val)
+    
+    # Find optimal threshold
+    optimal_threshold, threshold_results = model.find_optimal_threshold(X_val, y_val, target_recall=0.80)
+    
+    # Evaluate on test set
+    test_metrics = model.evaluate_model(X_test, y_test, threshold=optimal_threshold)
+    
+    # Save model
+    model.save_model('readmission_model.pkl')
+    
+    print("\n✓ Model training complete!")
