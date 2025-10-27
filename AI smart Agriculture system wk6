@@ -1,192 +1,246 @@
-<svg viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="1200" height="900" fill="#f8f9fa"/>
+# AI-Driven IoT Smart Agriculture System
+## Precision Crop Yield Prediction & Management
+
+---
+
+## 1. System Overview
+
+**Objective**: Develop an integrated IoT-AI system that monitors agricultural conditions in real-time and predicts crop yields using machine learning, enabling precision farming decisions.
+
+**Target Crops**: Wheat, corn, soybeans, rice
+**Deployment**: Individual farm plots (1-100 hectares)
+**Expected Improvement**: 15-25% yield increase, 30% water savings
+
+---
+
+## 2. Required Sensors & Hardware
+
+### Environmental Sensors
+
+#### Soil Monitoring
+- **Soil Moisture Sensors (Capacitive)**
+  - Type: VH400 or similar
+  - Placement: Multiple depths (10cm, 30cm, 60cm)
+  - Frequency: Every 15 minutes
+  - Purpose: Irrigation optimization, drought prediction
+
+- **Soil pH Sensor**
+  - Type: Analog pH probe with temperature compensation
+  - Range: 3-9 pH
+  - Purpose: Nutrient availability assessment
+
+- **NPK Sensor** (Nitrogen, Phosphorus, Potassium)
+  - Type: Electrochemical sensor array
+  - Purpose: Fertilizer recommendation and timing
+
+- **Soil Temperature Sensor**
+  - Type: DS18B20 waterproof probe
+  - Depth: 10cm
+  - Purpose: Germination timing, root development monitoring
+
+#### Atmospheric Monitoring
+- **Air Temperature & Humidity Sensor**
+  - Type: DHT22 or BME280
+  - Placement: 1.5m above ground, weather shelter
+  - Purpose: Evapotranspiration calculation, disease risk
+
+- **Light Intensity Sensor (PAR)**
+  - Type: Photosynthetically Active Radiation sensor
+  - Purpose: Growth rate estimation, yield prediction
+
+- **Weather Station**
+  - Wind speed/direction anemometer
+  - Barometric pressure sensor
+  - Rain gauge (tipping bucket)
+  - Purpose: Microclimate characterization
+
+#### Crop Monitoring
+- **Multispectral Camera**
+  - Type: 5-band (RGB + NIR + Red Edge)
+  - Mounting: Drone or fixed tower
+  - Frequency: Weekly during growing season
+  - Purpose: NDVI calculation, stress detection
+
+- **Leaf Wetness Sensor**
+  - Type: Grid-based moisture detector
+  - Purpose: Fungal disease risk prediction
+
+### Edge Computing Hardware
+- **Gateway Device**: Raspberry Pi 4 (4GB) with LoRaWAN module
+- **Sensor Nodes**: ESP32 with low-power LoRa radios
+- **Power**: Solar panels + LiPo batteries for remote nodes
+- **Storage**: 128GB SD card for edge data buffering
+
+### Network Architecture
+- **Protocol**: LoRaWAN (long range, low power)
+- **Range**: Up to 5km in rural areas
+- **Data Rate**: 0.3-50 kbps (sufficient for sensor data)
+- **Topology**: Star network with central gateway
+
+---
+
+## 3. AI Model Architecture
+
+### Model Type: Ensemble Approach
+
+#### Primary Model: Gradient Boosting (XGBoost/LightGBM)
+**Rationale**: 
+- Handles tabular sensor data effectively
+- Robust to missing data and outliers
+- Interpretable feature importance
+- Strong performance on structured agricultural data
+
+**Input Features** (40+ dimensions):
+- **Time-series Features**:
+  - Rolling averages (7, 14, 30 days) of temperature, moisture, etc.
+  - Growing Degree Days (GDD) accumulation
+  - Precipitation totals
   
-  <!-- Title -->
-  <text x="600" y="40" font-size="28" font-weight="bold" text-anchor="middle" fill="#1a1a1a">
-    AI-Driven IoT Smart Agriculture System Architecture
-  </text>
+- **Soil Features**:
+  - Moisture levels (multiple depths)
+  - pH, NPK values
+  - Soil temperature
   
-  <!-- Field Layer -->
-  <rect x="50" y="80" width="1100" height="220" fill="#e8f5e9" stroke="#4caf50" stroke-width="3" rx="10"/>
-  <text x="600" y="110" font-size="20" font-weight="bold" text-anchor="middle" fill="#2e7d32">
-    FIELD LAYER (Sensor Network)
-  </text>
+- **Environmental Features**:
+  - Average/min/max air temperature
+  - Humidity, solar radiation
+  - Wind speed, precipitation
   
-  <!-- Sensor Group 1: Soil Sensors -->
-  <g id="soil-sensors">
-    <rect x="80" y="130" width="200" height="140" fill="#fff" stroke="#4caf50" stroke-width="2" rx="8"/>
-    <circle cx="180" cy="160" r="25" fill="#8bc34a"/>
-    <text x="180" y="168" font-size="28" text-anchor="middle" fill="#fff">🌱</text>
-    <text x="180" y="205" font-size="14" font-weight="bold" text-anchor="middle">Soil Sensors</text>
-    <text x="180" y="225" font-size="11" text-anchor="middle" fill="#666">• Moisture (3 depths)</text>
-    <text x="180" y="240" font-size="11" text-anchor="middle" fill="#666">• Temperature</text>
-    <text x="180" y="255" font-size="11" text-anchor="middle" fill="#666">• pH, NPK</text>
-  </g>
+- **Vegetation Indices**:
+  - NDVI (Normalized Difference Vegetation Index)
+  - EVI (Enhanced Vegetation Index)
+  - LAI (Leaf Area Index estimates)
   
-  <!-- Sensor Group 2: Weather Station -->
-  <g id="weather-sensors">
-    <rect x="320" y="130" width="200" height="140" fill="#fff" stroke="#2196f3" stroke-width="2" rx="8"/>
-    <circle cx="420" cy="160" r="25" fill="#64b5f6"/>
-    <text x="420" y="168" font-size="28" text-anchor="middle" fill="#fff">⛅</text>
-    <text x="420" y="205" font-size="14" font-weight="bold" text-anchor="middle">Weather Station</text>
-    <text x="420" y="225" font-size="11" text-anchor="middle" fill="#666">• Temp/Humidity</text>
-    <text x="420" y="240" font-size="11" text-anchor="middle" fill="#666">• Rain, Wind</text>
-    <text x="420" y="255" font-size="11" text-anchor="middle" fill="#666">• Pressure, Light</text>
-  </g>
-  
-  <!-- Sensor Group 3: Camera/Drone -->
-  <g id="camera-sensors">
-    <rect x="560" y="130" width="200" height="140" fill="#fff" stroke="#ff9800" stroke-width="2" rx="8"/>
-    <circle cx="660" cy="160" r="25" fill="#ffb74d"/>
-    <text x="660" y="168" font-size="28" text-anchor="middle" fill="#fff">📷</text>
-    <text x="660" y="205" font-size="14" font-weight="bold" text-anchor="middle">Multispectral Camera</text>
-    <text x="660" y="225" font-size="11" text-anchor="middle" fill="#666">• RGB + NIR</text>
-    <text x="660" y="240" font-size="11" text-anchor="middle" fill="#666">• NDVI calculation</text>
-    <text x="660" y="255" font-size="11" text-anchor="middle" fill="#666">• Stress detection</text>
-  </g>
-  
-  <!-- LoRaWAN indicator -->
-  <g id="lorawan">
-    <rect x="820" y="150" width="140" height="90" fill="#fff" stroke="#9c27b0" stroke-width="2" rx="8" stroke-dasharray="5,5"/>
-    <text x="890" y="180" font-size="16" font-weight="bold" text-anchor="middle" fill="#9c27b0">LoRaWAN</text>
-    <text x="890" y="200" font-size="11" text-anchor="middle" fill="#666">868 MHz</text>
-    <text x="890" y="215" font-size="11" text-anchor="middle" fill="#666">Range: 5 km</text>
-    <text x="890" y="230" font-size="11" text-anchor="middle" fill="#666">Low Power</text>
-  </g>
-  
-  <!-- Arrows from sensors to LoRaWAN -->
-  <path d="M 280 200 L 820 200" stroke="#9c27b0" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-  <path d="M 520 200 L 820 200" stroke="#9c27b0" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-  <path d="M 760 200 L 820 200" stroke="#9c27b0" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-  
-  <!-- Arrow from LoRaWAN to Edge Layer -->
-  <path d="M 890 240 L 890 340" stroke="#333" stroke-width="3" fill="none" marker-end="url(#arrowhead-large)"/>
-  
-  <!-- Edge Layer -->
-  <rect x="50" y="340" width="1100" height="280" fill="#e3f2fd" stroke="#2196f3" stroke-width="3" rx="10"/>
-  <text x="600" y="370" font-size="20" font-weight="bold" text-anchor="middle" fill="#1565c0">
-    EDGE LAYER (Raspberry Pi Gateway)
-  </text>
-  
-  <!-- Data Processing Pipeline -->
-  <g id="processing">
-    <rect x="100" y="390" width="180" height="100" fill="#fff" stroke="#2196f3" stroke-width="2" rx="8"/>
-    <text x="190" y="415" font-size="14" font-weight="bold" text-anchor="middle">Data Aggregation</text>
-    <text x="190" y="435" font-size="11" text-anchor="middle" fill="#666">• Collect readings</text>
-    <text x="190" y="450" font-size="11" text-anchor="middle" fill="#666">• Buffer locally</text>
-    <text x="190" y="465" font-size="11" text-anchor="middle" fill="#666">• Time-series DB</text>
-    <text x="190" y="480" font-size="11" text-anchor="middle" fill="#666">Every 15 min</text>
-  </g>
-  
-  <g id="preprocessing">
-    <rect x="320" y="390" width="180" height="100" fill="#fff" stroke="#2196f3" stroke-width="2" rx="8"/>
-    <text x="410" y="415" font-size="14" font-weight="bold" text-anchor="middle">Preprocessing</text>
-    <text x="410" y="435" font-size="11" text-anchor="middle" fill="#666">• Validation</text>
-    <text x="410" y="450" font-size="11" text-anchor="middle" fill="#666">• Cleaning</text>
-    <text x="410" y="465" font-size="11" text-anchor="middle" fill="#666">• Feature engineering</text>
-    <text x="410" y="480" font-size="11" text-anchor="middle" fill="#666">• Normalization</text>
-  </g>
-  
-  <g id="ai-inference">
-    <rect x="540" y="390" width="200" height="100" fill="#fff3e0" stroke="#ff9800" stroke-width="3" rx="8"/>
-    <text x="640" y="415" font-size="14" font-weight="bold" text-anchor="middle" fill="#e65100">AI Inference Engine</text>
-    <text x="640" y="435" font-size="11" text-anchor="middle" fill="#666">• XGBoost Predictor</text>
-    <text x="640" y="450" font-size="11" text-anchor="middle" fill="#666">• CNN Analyzer</text>
-    <text x="640" y="465" font-size="11" text-anchor="middle" fill="#666">• LSTM Forecaster</text>
-    <text x="640" y="480" font-size="10" font-style="italic" text-anchor="middle" fill="#ff6f00">Latency: &lt;500ms</text>
-  </g>
-  
-  <g id="decision">
-    <rect x="780" y="390" width="180" height="100" fill="#fff" stroke="#4caf50" stroke-width="2" rx="8"/>
-    <text x="870" y="415" font-size="14" font-weight="bold" text-anchor="middle">Decision Engine</text>
-    <text x="870" y="435" font-size="11" text-anchor="middle" fill="#666">• Alert triggers</text>
-    <text x="870" y="450" font-size="11" text-anchor="middle" fill="#666">• Recommendations</text>
-    <text x="870" y="465" font-size="11" text-anchor="middle" fill="#666">• Action planning</text>
-    <text x="870" y="480" font-size="11" text-anchor="middle" fill="#666">• Irrigation control</text>
-  </g>
-  
-  <!-- Arrows in processing pipeline -->
-  <path d="M 280 440 L 310 440" stroke="#2196f3" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-  <path d="M 500 440 L 530 440" stroke="#2196f3" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-  <path d="M 740 440 L 770 440" stroke="#2196f3" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-  
-  <!-- Model Output Box -->
-  <g id="output">
-    <rect x="250" y="520" width="700" height="80" fill="#fff8e1" stroke="#ffa726" stroke-width="2" rx="8"/>
-    <text x="600" y="545" font-size="16" font-weight="bold" text-anchor="middle" fill="#e65100">AI Model Output</text>
-    <text x="280" y="570" font-size="12" text-anchor="start" fill="#666">📊 Predicted Yield: 8.5 tons/hectare (±0.8)</text>
-    <text x="280" y="588" font-size="12" text-anchor="start" fill="#666">💧 Irrigation Needed: 12mm in 24 hours | 🌾 NDVI: 0.72 (healthy) | ⚠️ Alert: Low N detected</text>
-  </g>
-  
-  <!-- Cloud Layer -->
-  <rect x="50" y="660" width="550" height="180" fill="#f3e5f5" stroke="#9c27b0" stroke-width="3" rx="10"/>
-  <text x="325" y="690" font-size="18" font-weight="bold" text-anchor="middle" fill="#6a1b9a">
-    CLOUD LAYER (Optional Sync)
-  </text>
-  
-  <g id="cloud-db">
-    <rect x="80" y="710" width="220" height="100" fill="#fff" stroke="#9c27b0" stroke-width="2" rx="8"/>
-    <text x="190" y="735" font-size="13" font-weight="bold" text-anchor="middle">Historical Database</text>
-    <text x="190" y="755" font-size="11" text-anchor="middle" fill="#666">• PostgreSQL + TimescaleDB</text>
-    <text x="190" y="770" font-size="11" text-anchor="middle" fill="#666">• Multi-year data</text>
-    <text x="190" y="785" font-size="11" text-anchor="middle" fill="#666">• Regional aggregation</text>
-    <text x="190" y="800" font-size="10" text-anchor="middle" fill="#9c27b0">Sync: Daily</text>
-  </g>
-  
-  <g id="cloud-training">
-    <rect x="340" y="710" width="220" height="100" fill="#fff" stroke="#9c27b0" stroke-width="2" rx="8"/>
-    <text x="450" y="735" font-size="13" font-weight="bold" text-anchor="middle">Model Training</text>
-    <text x="450" y="755" font-size="11" text-anchor="middle" fill="#666">• Weekly retraining</text>
-    <text x="450" y="770" font-size="11" text-anchor="middle" fill="#666">• Hyperparameter tuning</text>
-    <text x="450" y="785" font-size="11" text-anchor="middle" fill="#666">• A/B testing</text>
-    <text x="450" y="800" font-size="10" text-anchor="middle" fill="#9c27b0">Push updates to edge</text>
-  </g>
-  
-  <!-- Application Layer -->
-  <rect x="650" y="660" width="500" height="180" fill="#fff3e0" stroke="#ff6f00" stroke-width="3" rx="10"/>
-  <text x="900" y="690" font-size="18" font-weight="bold" text-anchor="middle" fill="#e65100">
-    APPLICATION LAYER
-  </text>
-  
-  <g id="dashboard">
-    <rect x="680" y="710" width="200" height="100" fill="#fff" stroke="#ff9800" stroke-width="2" rx="8"/>
-    <text x="780" y="735" font-size="13" font-weight="bold" text-anchor="middle">Farmer Dashboard</text>
-    <text x="780" y="755" font-size="11" text-anchor="middle" fill="#666">📱 Real-time monitoring</text>
-    <text x="780" y="770" font-size="11" text-anchor="middle" fill="#666">📈 Yield predictions</text>
-    <text x="780" y="785" font-size="11" text-anchor="middle" fill="#666">💡 Recommendations</text>
-    <text x="780" y="800" font-size="11" text-anchor="middle" fill="#666">📊 Analytics</text>
-  </g>
-  
-  <g id="automation">
-    <rect x="910" y="710" width="200" height="100" fill="#fff" stroke="#4caf50" stroke-width="2" rx="8"/>
-    <text x="1010" y="735" font-size="13" font-weight="bold" text-anchor="middle">Automated Systems</text>
-    <text x="1010" y="755" font-size="11" text-anchor="middle" fill="#666">💧 Irrigation controller</text>
-    <text x="1010" y="770" font-size="11" text-anchor="middle" fill="#666">🌾 Fertilizer dispenser</text>
-    <text x="1010" y="785" font-size="11" text-anchor="middle" fill="#666">🚁 Drone missions</text>
-    <text x="1010" y="800" font-size="11" text-anchor="middle" fill="#666">🔔 Alert notifications</text>
-  </g>
-  
-  <!-- Arrows connecting layers -->
-  <path d="M 325 600 L 325 650" stroke="#9c27b0" stroke-width="2" fill="none" marker-end="url(#arrowhead)" stroke-dasharray="5,5"/>
-  <path d="M 870 600 L 870 650" stroke="#ff9800" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-  
-  <!-- Arrow markers -->
-  <defs>
-    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-      <polygon points="0 0, 10 3, 0 6" fill="#333"/>
-    </marker>
-    <marker id="arrowhead-large" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
-      <polygon points="0 0, 12 4, 0 8" fill="#333"/>
-    </marker>
-  </defs>
-  
-  <!-- Legend -->
-  <g id="legend">
-    <rect x="50" y="860" width="680" height="30" fill="#fff" stroke="#666" stroke-width="1" rx="5"/>
-    <text x="60" y="880" font-size="11" font-weight="bold" fill="#333">Key Benefits:</text>
-    <text x="140" y="880" font-size="10" fill="#4caf50">15-25% Yield ↑</text>
-    <text x="250" y="880" font-size="10" fill="#2196f3">30% Water Savings</text>
-    <text x="380" y="880" font-size="10" fill="#ff9800">Real-time Decisions (&lt;1s)</text>
-    <text x="540" y="880" font-size="10" fill="#9c27b0">14-21 Day Early Warning</text>
-  </g>
+- **Phenological Features**:
+  - Days since planting
+  - Growth stage indicators
+  - Historical yield data (lag features)
+
+**Output**: 
+- Predicted yield (tons/hectare)
+- Confidence interval (±15%)
+- Yield anomaly score (comparison to historical average)
+
+#### Secondary Model: CNN for Image Analysis
+**Architecture**: ResNet-18 (transfer learning)
+**Purpose**: Analyze multispectral imagery for stress detection
+**Output**: Health scores, disease probability, pest detection
+
+#### Tertiary Model: LSTM for Time-Series Forecasting
+**Purpose**: Short-term prediction (7-14 days) of soil moisture and weather patterns
+**Application**: Proactive irrigation scheduling
+
+### Training Approach
+1. **Historical Data**: 3-5 years of farm records
+2. **Transfer Learning**: Pre-trained models from similar regions/crops
+3. **Continuous Learning**: Update model bi-weekly with new sensor data
+4. **Cross-Validation**: Spatial and temporal splits to prevent overfitting
+
+### Expected Performance
+- **Yield Prediction Accuracy**: 85-92% (within 10% of actual)
+- **Early Warning**: 14-21 days advance notice for interventions
+- **Inference Time**: <500ms on Raspberry Pi edge device
+
+---
+
+## 4. Data Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     FIELD LAYER                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  [Soil Sensors] → [ESP32 Node 1] ─┐                       │
+│  • Moisture (3 depths)              │                       │
+│  • Temperature                      │                       │
+│  • pH, NPK                          │                       │
+│                                     │                       │
+│  [Weather Station] → [ESP32 Node 2]─┤    LoRaWAN          │
+│  • Temp/Humidity                    ├──── (868 MHz) ────┐ │
+│  • Rain, Wind                       │                    │ │
+│  • Pressure                         │                    │ │
+│                                     │                    │ │
+│  [Camera/Drone] → [ESP32 Node 3] ──┘                    │ │
+│  • Multispectral Images                                  │ │
+│  • RGB + NDVI                                            │ │
+│                                                          │ │
+└──────────────────────────────────────────────────────────┼─┘
+                                                           │
+                                                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     EDGE LAYER                              │
+│              (Raspberry Pi Gateway)                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────────────┐      ┌──────────────────────┐    │
+│  │  Data Aggregation   │ ───→ │  Preprocessing       │    │
+│  │  • Collect sensor   │      │  • Validation        │    │
+│  │    readings         │      │  • Cleaning          │    │
+│  │  • Buffer locally   │      │  • Feature eng.      │    │
+│  └─────────────────────┘      └──────────────────────┘    │
+│             │                            │                 │
+│             │                            ▼                 │
+│             │         ┌──────────────────────────────┐    │
+│             │         │  AI Inference Engine         │    │
+│             │         ├──────────────────────────────┤    │
+│             │         │  • XGBoost Yield Predictor   │    │
+│             │         │  • CNN Image Analyzer        │    │
+│             │         │  • LSTM Forecaster           │    │
+│             │         │  • TensorFlow Lite           │    │
+│             │         └──────────────────────────────┘    │
+│             │                      │                       │
+│             ▼                      ▼                       │
+│  ┌─────────────────────┐  ┌──────────────────────┐       │
+│  │  Local Storage      │  │  Decision Engine     │       │
+│  │  • Time-series DB   │  │  • Alert triggers    │       │
+│  │  • Model cache      │  │  • Recommendations   │       │
+│  └─────────────────────┘  └──────────────────────┘       │
+│             │                      │                       │
+└─────────────┼──────────────────────┼───────────────────────┘
+              │                      │
+              │   4G/WiFi/Ethernet   │
+              ▼                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     CLOUD LAYER                             │
+│                  (Optional, Periodic Sync)                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌────────────────────┐    ┌──────────────────────────┐   │
+│  │  Historical DB     │    │  Model Training Pipeline │   │
+│  │  • PostgreSQL +    │───→│  • Weekly retraining     │   │
+│  │    TimescaleDB     │    │  • Hyperparameter tuning │   │
+│  └────────────────────┘    │  • A/B testing           │   │
+│           │                └──────────────────────────┘   │
+│           │                           │                    │
+│           │                           ▼                    │
+│           │         ┌────────────────────────────────┐    │
+│           │         │  Advanced Analytics            │    │
+│           │         │  • Multi-farm aggregation      │    │
+│           │         │  • Regional yield forecasts    │    │
+│           │         │  • Market price correlation    │    │
+│           │         └────────────────────────────────┘    │
+│           │                                                │
+│           ▼                                                │
+│  ┌────────────────────────────────────────────────────┐   │
+│  │           Dashboard & API                          │   │
+│  │  • Web interface (React)                           │   │
+│  │  • Mobile app (React Native)                       │   │
+│  │  • RESTful API for integrations                    │   │
+│  └────────────────────────────────────────────────────┘   │
+│                           │                                │
+└───────────────────────────┼────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   APPLICATION LAYER                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  [Farmer Dashboard]          [Automated Systems]           │
+│  • Real-time monitoring      • Irrigation controller       │
+│  • Yield predictions         • Fertilizer dispenser        │
+│  • Recommendations           • Drone auto-missions         │
+│  • Historical analytics      • Alert notifications         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+
+None4
