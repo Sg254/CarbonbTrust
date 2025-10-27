@@ -1,0 +1,247 @@
+"""
+Edge AI Recyclable Item Classification
+TensorFlow Lite Model Training and Deployment
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+import seaborn as sns
+
+# Set random seeds for reproducibility
+np.random.seed(42)
+tf.random.set_seed(42)
+
+print("TensorFlow version:", tf.__version__)
+
+# ============================================
+# STEP 1: Data Preparation
+# ============================================
+# Simulating a recyclable items dataset
+# Categories: plastic, glass, metal, paper, cardboard, trash
+categories = ['plastic', 'glass', 'metal', 'paper', 'cardboard', 'trash']
+num_classes = len(categories)
+
+# For demonstration, we'll use synthetic data
+# In real scenarios, use actual image datasets like TrashNet or Kaggle's waste classification
+def create_synthetic_dataset(n_samples=1000, img_size=(96, 96)):
+    """Create synthetic image data for demonstration"""
+    X = np.random.rand(n_samples, img_size[0], img_size[1], 3).astype(np.float32)
+    y = np.random.randint(0, num_classes, n_samples)
+    return X, y
+
+# Generate dataset
+X, y = create_synthetic_dataset(n_samples=1200)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+print(f"Training samples: {len(X_train)}")
+print(f"Testing samples: {len(X_test)}")
+print(f"Image shape: {X_train[0].shape}")
+
+# ============================================
+# STEP 2: Build Lightweight CNN Model
+# ============================================
+def create_lightweight_model(input_shape=(96, 96, 3), num_classes=6):
+    """
+    Create a MobileNetV2-inspired lightweight model optimized for Edge AI
+    """
+    model = keras.Sequential([
+        # Input layer
+        layers.Input(shape=input_shape),
+        
+        # Efficient convolutional blocks
+        layers.Conv2D(32, (3, 3), strides=2, padding='same', activation='relu'),
+        layers.BatchNormalization(),
+        
+        layers.DepthwiseConv2D((3, 3), padding='same', activation='relu'),
+        layers.BatchNormalization(),
+        layers.Conv2D(64, (1, 1), activation='relu'),
+        layers.BatchNormalization(),
+        
+        layers.MaxPooling2D((2, 2)),
+        layers.Dropout(0.25),
+        
+        layers.DepthwiseConv2D((3, 3), padding='same', activation='relu'),
+        layers.BatchNormalization(),
+        layers.Conv2D(128, (1, 1), activation='relu'),
+        layers.BatchNormalization(),
+        
+        layers.GlobalAveragePooling2D(),
+        layers.Dropout(0.5),
+        
+        # Classification head
+        layers.Dense(64, activation='relu'),
+        layers.Dropout(0.3),
+        layers.Dense(num_classes, activation='softmax')
+    ])
+    
+    return model
+
+model = create_lightweight_model(num_classes=num_classes)
+model.summary()
+
+# ============================================
+# STEP 3: Train the Model
+# ============================================
+model.compile(
+    optimizer=keras.optimizers.Adam(learning_rate=0.001),
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Training
+history = model.fit(
+    X_train, y_train,
+    validation_split=0.2,
+    epochs=10,
+    batch_size=32,
+    verbose=1
+)
+
+# ============================================
+# STEP 4: Evaluate Model
+# ============================================
+test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+print(f"\nTest Accuracy: {test_accuracy*100:.2f}%")
+print(f"Test Loss: {test_loss:.4f}")
+
+# Predictions
+y_pred = np.argmax(model.predict(X_test), axis=1)
+
+# Classification report
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=categories))
+
+# ============================================
+# STEP 5: Convert to TensorFlow Lite
+# ============================================
+print("\n" + "="*50)
+print("CONVERTING TO TENSORFLOW LITE")
+print("="*50)
+
+# Standard conversion
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+
+# Save the model
+with open('recyclable_classifier.tflite', 'wb') as f:
+    f.write(tflite_model)
+
+print(f"TFLite model size: {len(tflite_model) / 1024:.2f} KB")
+
+# Quantized conversion for even smaller size
+converter_quant = tf.lite.TFLiteConverter.from_keras_model(model)
+converter_quant.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_quantized_model = converter_quant.convert()
+
+with open('recyclable_classifier_quantized.tflite', 'wb') as f:
+    f.write(tflite_quantized_model)
+
+print(f"Quantized TFLite model size: {len(tflite_quantized_model) / 1024:.2f} KB")
+print(f"Size reduction: {(1 - len(tflite_quantized_model)/len(tflite_model))*100:.1f}%")
+
+# ============================================
+# STEP 6: Test TFLite Model
+# ============================================
+def test_tflite_model(tflite_model_path, test_images, test_labels):
+    """Test TFLite model inference"""
+    interpreter = tf.lite.Interpreter(model_path=tflite_model_path)
+    interpreter.allocate_tensors()
+    
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    
+    predictions = []
+    for img in test_images[:100]:  # Test on first 100 samples
+        interpreter.set_tensor(input_details[0]['index'], img.reshape(1, 96, 96, 3))
+        interpreter.invoke()
+        output = interpreter.get_tensor(output_details[0]['index'])
+        predictions.append(np.argmax(output))
+    
+    accuracy = np.mean(np.array(predictions) == test_labels[:100])
+    return accuracy
+
+tflite_accuracy = test_tflite_model('recyclable_classifier.tflite', X_test, y_test)
+print(f"\nTFLite model accuracy: {tflite_accuracy*100:.2f}%")
+
+# ============================================
+# STEP 7: Visualization
+# ============================================
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Training history
+axes[0].plot(history.history['accuracy'], label='Train Accuracy')
+axes[0].plot(history.history['val_accuracy'], label='Validation Accuracy')
+axes[0].set_xlabel('Epoch')
+axes[0].set_ylabel('Accuracy')
+axes[0].set_title('Model Training History')
+axes[0].legend()
+axes[0].grid(True)
+
+# Confusion matrix
+cm = confusion_matrix(y_test, y_pred)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=categories, 
+            yticklabels=categories, ax=axes[1])
+axes[1].set_xlabel('Predicted')
+axes[1].set_ylabel('Actual')
+axes[1].set_title('Confusion Matrix')
+
+plt.tight_layout()
+plt.savefig('training_results.png', dpi=150)
+plt.show()
+
+print("\n" + "="*50)
+print("EDGE AI BENEFITS FOR REAL-TIME APPLICATIONS")
+print("="*50)
+print("""
+1. LOW LATENCY: Processing happens on-device, reducing cloud round-trip time
+   → Critical for real-time recyclable sorting at 30-60 FPS
+
+2. PRIVACY: Image data stays on device, no cloud transmission needed
+   → Important for user privacy in smart waste bins
+
+3. OFFLINE OPERATION: Works without internet connectivity
+   → Enables deployment in remote recycling facilities
+
+4. REDUCED BANDWIDTH: No need to stream video to cloud servers
+   → Cost savings and reduced network congestion
+
+5. SCALABILITY: Each device processes independently
+   → Easy to deploy thousands of smart recycling units
+
+6. POWER EFFICIENCY: Optimized models consume minimal power
+   → Enables battery-powered portable recycling scanners
+""")
+
+print("\n" + "="*50)
+print("DEPLOYMENT ON RASPBERRY PI")
+print("="*50)
+print("""
+Steps to deploy on Raspberry Pi:
+
+1. Install TensorFlow Lite Runtime:
+   pip3 install tflite-runtime
+
+2. Transfer model file:
+   scp recyclable_classifier_quantized.tflite pi@raspberrypi:/home/pi/
+
+3. Connect camera module (Pi Camera or USB webcam)
+
+4. Run inference script:
+   - Load TFLite interpreter
+   - Capture image from camera
+   - Preprocess (resize to 96x96, normalize)
+   - Run inference
+   - Display prediction with confidence score
+
+5. Optimize performance:
+   - Use hardware acceleration (Edge TPU if available)
+   - Adjust input resolution based on accuracy/speed trade-off
+   - Implement frame skipping for real-time video processing
+
+Expected inference time on Raspberry Pi 4: ~50-100ms per image
+""")
