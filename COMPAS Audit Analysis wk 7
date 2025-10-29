@@ -1,0 +1,243 @@
+"""
+COMPAS Recidivism Dataset Bias Audit
+Using AI Fairness 360 to analyze racial bias in risk scores
+"""
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix, classification_report
+import warnings
+warnings.filterwarnings('ignore')
+
+# Install required packages (run once):
+# pip install aif360
+# pip install 'aif360[all]'
+
+from aif360.datasets import CompasDataset
+from aif360.metrics import BinaryLabelDatasetMetric, ClassificationMetric
+from aif360.algorithms.preprocessing import Reweighing
+
+# Set style for visualizations
+sns.set_style("whitegrid")
+plt.rcParams['figure.figsize'] = (12, 8)
+
+# ============================================================================
+# 1. LOAD AND PREPARE DATA
+# ============================================================================
+
+print("Loading COMPAS Dataset...")
+dataset = CompasDataset()
+
+# Define privileged and unprivileged groups
+privileged_groups = [{'race': 1}]  # Caucasian
+unprivileged_groups = [{'race': 0}]  # African-American
+
+print(f"\nDataset shape: {dataset.features.shape}")
+print(f"Privileged group (Caucasian): {privileged_groups}")
+print(f"Unprivileged group (African-American): {unprivileged_groups}")
+
+# ============================================================================
+# 2. CALCULATE BIAS METRICS
+# ============================================================================
+
+print("\n" + "="*70)
+print("BIAS ANALYSIS - ORIGINAL DATASET")
+print("="*70)
+
+# Dataset metrics (before prediction)
+metric_orig = BinaryLabelDatasetMetric(
+    dataset,
+    unprivileged_groups=unprivileged_groups,
+    privileged_groups=privileged_groups
+)
+
+print(f"\nBase Rate (Recidivism Rate):")
+print(f"  Unprivileged group: {metric_orig.base_rate(privileged=False):.3f}")
+print(f"  Privileged group: {metric_orig.base_rate(privileged=True):.3f}")
+
+print(f"\nDisparate Impact: {metric_orig.disparate_impact():.3f}")
+print("  (Ratio < 0.8 or > 1.2 indicates bias)")
+
+print(f"\nStatistical Parity Difference: {metric_orig.statistical_parity_difference():.3f}")
+print("  (Value close to 0 indicates fairness)")
+
+# ============================================================================
+# 3. SIMULATE PREDICTIONS AND CALCULATE FAIRNESS METRICS
+# ============================================================================
+
+# For demonstration, we'll use the actual labels as "predictions"
+# In practice, you would use a trained model's predictions
+dataset_pred = dataset.copy(deepcopy=True)
+
+# Calculate classification metrics
+classified_metric = ClassificationMetric(
+    dataset,
+    dataset_pred,
+    unprivileged_groups=unprivileged_groups,
+    privileged_groups=privileged_groups
+)
+
+print("\n" + "="*70)
+print("FAIRNESS METRICS")
+print("="*70)
+
+print(f"\nEqual Opportunity Difference (TPR): {classified_metric.equal_opportunity_difference():.3f}")
+print("  (Difference in True Positive Rates)")
+
+print(f"\nAverage Odds Difference: {classified_metric.average_odds_difference():.3f}")
+print("  (Average of TPR and FPR differences)")
+
+# False Positive Rates
+fpr_unprivileged = classified_metric.false_positive_rate(privileged=False)
+fpr_privileged = classified_metric.false_positive_rate(privileged=True)
+
+print(f"\nFalse Positive Rate:")
+print(f"  Unprivileged group: {fpr_unprivileged:.3f}")
+print(f"  Privileged group: {fpr_privileged:.3f}")
+print(f"  Difference: {fpr_unprivileged - fpr_privileged:.3f}")
+
+# False Negative Rates
+fnr_unprivileged = classified_metric.false_negative_rate(privileged=False)
+fnr_privileged = classified_metric.false_negative_rate(privileged=True)
+
+print(f"\nFalse Negative Rate:")
+print(f"  Unprivileged group: {fnr_unprivileged:.3f}")
+print(f"  Privileged group: {fnr_privileged:.3f}")
+print(f"  Difference: {fnr_unprivileged - fnr_privileged:.3f}")
+
+# ============================================================================
+# 4. VISUALIZATIONS
+# ============================================================================
+
+fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+fig.suptitle('COMPAS Dataset: Racial Bias Analysis', fontsize=16, fontweight='bold')
+
+# Visualization 1: Base Rates
+ax1 = axes[0, 0]
+base_rates = [
+    metric_orig.base_rate(privileged=False),
+    metric_orig.base_rate(privileged=True)
+]
+bars1 = ax1.bar(['African-American', 'Caucasian'], base_rates, 
+                color=['#e74c3c', '#3498db'], alpha=0.7, edgecolor='black')
+ax1.set_ylabel('Recidivism Rate', fontsize=12)
+ax1.set_title('Base Recidivism Rates by Race', fontsize=13, fontweight='bold')
+ax1.set_ylim(0, 1)
+for bar in bars1:
+    height = bar.get_height()
+    ax1.text(bar.get_x() + bar.get_width()/2., height,
+             f'{height:.3f}', ha='center', va='bottom', fontweight='bold')
+
+# Visualization 2: False Positive Rates
+ax2 = axes[0, 1]
+fpr_data = [fpr_unprivileged, fpr_privileged]
+bars2 = ax2.bar(['African-American', 'Caucasian'], fpr_data,
+                color=['#e74c3c', '#3498db'], alpha=0.7, edgecolor='black')
+ax2.set_ylabel('False Positive Rate', fontsize=12)
+ax2.set_title('False Positive Rates by Race', fontsize=13, fontweight='bold')
+ax2.set_ylim(0, max(fpr_data) * 1.2)
+for bar in bars2:
+    height = bar.get_height()
+    ax2.text(bar.get_x() + bar.get_width()/2., height,
+             f'{height:.3f}', ha='center', va='bottom', fontweight='bold')
+
+# Visualization 3: False Negative Rates
+ax3 = axes[1, 0]
+fnr_data = [fnr_unprivileged, fnr_privileged]
+bars3 = ax3.bar(['African-American', 'Caucasian'], fnr_data,
+                color=['#e74c3c', '#3498db'], alpha=0.7, edgecolor='black')
+ax3.set_ylabel('False Negative Rate', fontsize=12)
+ax3.set_title('False Negative Rates by Race', fontsize=13, fontweight='bold')
+ax3.set_ylim(0, max(fnr_data) * 1.2)
+for bar in bars3:
+    height = bar.get_height()
+    ax3.text(bar.get_x() + bar.get_width()/2., height,
+             f'{height:.3f}', ha='center', va='bottom', fontweight='bold')
+
+# Visualization 4: Fairness Metrics Summary
+ax4 = axes[1, 1]
+metrics_names = ['Disparate\nImpact', 'Statistical\nParity Diff', 
+                 'Equal Opp.\nDifference', 'Avg Odds\nDifference']
+metrics_values = [
+    metric_orig.disparate_impact(),
+    metric_orig.statistical_parity_difference(),
+    classified_metric.equal_opportunity_difference(),
+    classified_metric.average_odds_difference()
+]
+colors = ['#e74c3c' if abs(v - (1 if i == 0 else 0)) > 0.2 else '#2ecc71' 
+          for i, v in enumerate(metrics_values)]
+bars4 = ax4.bar(metrics_names, metrics_values, color=colors, alpha=0.7, edgecolor='black')
+ax4.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+if max(metrics_values) > 1 or min(metrics_values) < -0.5:
+    ax4.axhline(y=1, color='gray', linestyle='--', linewidth=1, alpha=0.3)
+ax4.set_ylabel('Metric Value', fontsize=12)
+ax4.set_title('Fairness Metrics Summary', fontsize=13, fontweight='bold')
+ax4.tick_params(axis='x', rotation=0)
+for bar in bars4:
+    height = bar.get_height()
+    ax4.text(bar.get_x() + bar.get_width()/2., height,
+             f'{height:.3f}', ha='center', 
+             va='bottom' if height > 0 else 'top', fontweight='bold')
+
+plt.tight_layout()
+plt.savefig('compas_bias_analysis.png', dpi=300, bbox_inches='tight')
+print("\n✓ Visualization saved as 'compas_bias_analysis.png'")
+plt.show()
+
+# ============================================================================
+# 5. BIAS MITIGATION - REWEIGHING
+# ============================================================================
+
+print("\n" + "="*70)
+print("BIAS MITIGATION - REWEIGHING TECHNIQUE")
+print("="*70)
+
+RW = Reweighing(unprivileged_groups=unprivileged_groups,
+                privileged_groups=privileged_groups)
+dataset_transf = RW.fit_transform(dataset)
+
+metric_transf = BinaryLabelDatasetMetric(
+    dataset_transf,
+    unprivileged_groups=unprivileged_groups,
+    privileged_groups=privileged_groups
+)
+
+print(f"\nDisparate Impact:")
+print(f"  Before: {metric_orig.disparate_impact():.3f}")
+print(f"  After: {metric_transf.disparate_impact():.3f}")
+
+print(f"\nStatistical Parity Difference:")
+print(f"  Before: {metric_orig.statistical_parity_difference():.3f}")
+print(f"  After: {metric_transf.statistical_parity_difference():.3f}")
+
+# ============================================================================
+# 6. SUMMARY STATISTICS
+# ============================================================================
+
+print("\n" + "="*70)
+print("SUMMARY")
+print("="*70)
+
+print("\nKey Findings:")
+print(f"1. Disparate Impact: {metric_orig.disparate_impact():.3f}")
+if metric_orig.disparate_impact() < 0.8:
+    print("   → BIAS DETECTED: Unprivileged group receives fewer positive outcomes")
+elif metric_orig.disparate_impact() > 1.2:
+    print("   → BIAS DETECTED: Privileged group receives fewer positive outcomes")
+else:
+    print("   → No significant disparate impact")
+
+print(f"\n2. FPR Disparity: {abs(fpr_unprivileged - fpr_privileged):.3f}")
+if abs(fpr_unprivileged - fpr_privileged) > 0.1:
+    higher_group = "African-American" if fpr_unprivileged > fpr_privileged else "Caucasian"
+    print(f"   → {higher_group} individuals have higher false positive rates")
+
+print(f"\n3. Statistical Parity: {metric_orig.statistical_parity_difference():.3f}")
+if abs(metric_orig.statistical_parity_difference()) > 0.1:
+    print("   → Significant difference in positive outcome rates between groups")
+
+print("\n" + "="*70)
+print("Analysis complete! Review the generated visualizations.")
+print("="*70)
